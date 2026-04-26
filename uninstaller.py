@@ -161,8 +161,9 @@ class UninstallerApp:
         self.tree.column("Version", width=100)
         self.tree.column("Size", width=100, anchor="center")
         
-        # Bind click event for checkbox
+        # Bind click events
         self.tree.bind("<Button-1>", self.on_tree_click)
+        self.tree.bind("<Button-3>", self.show_context_menu)
         
         scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
@@ -265,6 +266,53 @@ class UninstallerApp:
                         if item in self.selected_items:
                             self.selected_items.remove(item)
                     self.update_selected_count()
+                    
+    def show_context_menu(self, event):
+        """Show right-click context menu for the selected app"""
+        item = self.tree.identify_row(event.y)
+        if item:
+            self.tree.selection_set(item)
+            menu = tk.Menu(self.root, tearoff=0)
+            menu.add_command(label="✕ Uninstall", command=self.uninstall_app)
+            menu.add_command(label="⚡ Force Remove", command=self.force_remove)
+            
+            app_name = self.tree.item(item)["values"][1]
+            app = next((a for a in self.installed_apps if a["name"] == app_name), None)
+            
+            if app and app.get("install_location") and os.path.exists(app["install_location"]):
+                menu.add_separator()
+                menu.add_command(label="📁 Open Install Folder", 
+                               command=lambda: os.startfile(app["install_location"]))
+            
+            if app and app.get("registry_path"):
+                menu.add_command(label="🔧 Open Registry Entry",
+                               command=lambda: self.open_registry_key(app["registry_path"]))
+            
+            menu.add_separator()
+            menu.add_command(label="📋 Copy App Info", 
+                           command=lambda: self.copy_app_info(app))
+            
+            menu.post(event.x_root, event.y_root)
+            
+    def open_registry_key(self, path):
+        try:
+            # Set the LastKey so regedit opens to it
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Applets\Regedit", 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, "LastKey", 0, winreg.REG_SZ, path)
+            winreg.CloseKey(key)
+            subprocess.Popen(['regedit.exe'])
+            self.log(f"🔧 Opened Registry Editor at: {path}")
+        except Exception as e:
+            self.log(f"⚠️ Failed to open Registry Editor: {e}")
+            
+    def copy_app_info(self, app):
+        if app:
+            info = f"Name: {app.get('name', '')}\nPublisher: {app.get('publisher', '')}\nVersion: {app.get('version', '')}\nUninstall String: {app.get('uninstall_string', '')}"
+            if app.get('install_location'):
+                info += f"\nInstall Location: {app['install_location']}"
+            self.root.clipboard_clear()
+            self.root.clipboard_append(info)
+            self.log(f"📋 Copied info for {app['name']}")
     
     def select_all(self):
         """Select all apps in the list"""
@@ -372,14 +420,22 @@ class UninstallerApp:
                                 pass
                             
                             try:
-                                uninstall_string = winreg.QueryValueEx(subkey, "UninstallString")[0]
+                                uninstall_string = winreg.QueryValueEx(subkey, "QuietUninstallString")[0]
                             except:
-                                pass
+                                try:
+                                    uninstall_string = winreg.QueryValueEx(subkey, "UninstallString")[0]
+                                except:
+                                    pass
                             
                             try:
                                 size = int(winreg.QueryValueEx(subkey, "EstimatedSize")[0])
                             except:
                                 pass
+                                
+                            try:
+                                install_location = winreg.QueryValueEx(subkey, "InstallLocation")[0]
+                            except:
+                                install_location = ""
                             
                             if name and uninstall_string:
                                 # Convert size to readable format
@@ -397,8 +453,10 @@ class UninstallerApp:
                                     "publisher": publisher,
                                     "version": version,
                                     "uninstall_string": uninstall_string,
+                                    "install_location": install_location,
                                     "size": size,
-                                    "size_str": size_str
+                                    "size_str": size_str,
+                                    "registry_path": ("HKEY_LOCAL_MACHINE\\" if hive == winreg.HKEY_LOCAL_MACHINE else "HKEY_CURRENT_USER\\") + key_path + "\\" + subkey_name
                                 })
                         except:
                             pass
@@ -488,32 +546,21 @@ class UninstallerApp:
                 self.log(f"Command: {uninstall_cmd}")
                 
                 if "msiexec" in uninstall_cmd.lower():
-                    # For MSI, add silent flags
-                    if "/I" in uninstall_cmd:
-                        uninstall_cmd = uninstall_cmd.replace("/I", "/X")
-                    if "/quiet" not in uninstall_cmd.lower():
+                    # For MSI, convert install flag to uninstall flag
+                    if "/I" in uninstall_cmd or "/i" in uninstall_cmd:
+                        uninstall_cmd = uninstall_cmd.replace("/I", "/X").replace("/i", "/X")
+                    if "/quiet" not in uninstall_cmd.lower() and "/q" not in uninstall_cmd.lower():
                         uninstall_cmd += " /quiet /norestart"
-                    self.log(f"Modified MSI command: {uninstall_cmd}")
-                    subprocess.run(uninstall_cmd, shell=True, timeout=300)
+                
+                self.log(f"Executing: {uninstall_cmd}")
+                
+                # Execute the uninstaller and wait for it to finish
+                process = subprocess.run(uninstall_cmd, shell=True, timeout=600)
+                
+                if process.returncode == 0:
+                    self.log("✓ Uninstaller completed successfully")
                 else:
-                    # Try to run with silent flags (common silent switches)
-                    silent_flags = ["/S", "/silent", "/quiet", "/q", "-silent", "--silent"]
-                    cmd_executed = False
-                    
-                    for flag in silent_flags:
-                        try:
-                            self.log(f"Trying with flag: {flag}")
-                            subprocess.run(f'{uninstall_cmd} {flag}', shell=True, timeout=300, check=True)
-                            cmd_executed = True
-                            self.log(f"✓ Success with flag: {flag}")
-                            break
-                        except:
-                            continue
-                    
-                    if not cmd_executed:
-                        # Run without silent flag as fallback
-                        self.log("Running without silent flags...")
-                        subprocess.run(uninstall_cmd, shell=True, timeout=300)
+                    self.log(f"⚠️ Uninstaller exited with code: {process.returncode} (Proceeding anyway)")
                 
                 self.log("✓ Uninstaller completed")
                 
@@ -542,8 +589,10 @@ class UninstallerApp:
                     os.path.expandvars(r"%PROGRAMDATA%"),
                     os.path.expandvars(r"%PROGRAMFILES%"),
                     os.path.expandvars(r"%PROGRAMFILES(X86)%"),
-                    os.path.expandvars(r"%USERPROFILE%\AppData\Roaming"),
-                    os.path.expandvars(r"%USERPROFILE%\AppData\Local"),
+                    os.path.expandvars(r"%TEMP%"),
+                    os.path.expandvars(r"%USERPROFILE%\Desktop"),
+                    os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Start Menu\Programs"),
+                    os.path.expandvars(r"%PROGRAMDATA%\Microsoft\Windows\Start Menu\Programs")
                 ]
                 
                 self.log(f"\nScanning {len(locations)} locations...")
@@ -646,6 +695,10 @@ class UninstallerApp:
                 os.path.expandvars(r"%PROGRAMDATA%"),
                 os.path.expandvars(r"%PROGRAMFILES%"),
                 os.path.expandvars(r"%PROGRAMFILES(X86)%"),
+                os.path.expandvars(r"%TEMP%"),
+                os.path.expandvars(r"%USERPROFILE%\Desktop"),
+                os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Start Menu\Programs"),
+                os.path.expandvars(r"%PROGRAMDATA%\Microsoft\Windows\Start Menu\Programs")
             ]
             
             for location in locations:
@@ -676,6 +729,9 @@ class UninstallerApp:
                     except:
                         pass
                 self.log(f"✓ Cleaned {cleaned} leftover items")
+            
+            # Now clean registry
+            self.clean_registry_leftovers(app_name)
             
             self.root.after(0, self.load_installed_apps)
         except Exception as e:
@@ -727,25 +783,18 @@ class UninstallerApp:
                     uninstall_cmd = app["uninstall_string"]
                     
                     if "msiexec" in uninstall_cmd.lower():
-                        if "/I" in uninstall_cmd:
-                            uninstall_cmd = uninstall_cmd.replace("/I", "/X")
-                        if "/quiet" not in uninstall_cmd.lower():
+                        if "/I" in uninstall_cmd or "/i" in uninstall_cmd:
+                            uninstall_cmd = uninstall_cmd.replace("/I", "/X").replace("/i", "/X")
+                        if "/quiet" not in uninstall_cmd.lower() and "/q" not in uninstall_cmd.lower():
                             uninstall_cmd += " /quiet /norestart"
-                        subprocess.run(uninstall_cmd, shell=True, timeout=300)
-                    else:
-                        silent_flags = ["/S", "/silent", "/quiet", "/q"]
-                        cmd_executed = False
-                        for flag in silent_flags:
-                            try:
-                                subprocess.run(f'{uninstall_cmd} {flag}', shell=True, timeout=300, check=True)
-                                cmd_executed = True
-                                break
-                            except:
-                                continue
-                        if not cmd_executed:
-                            subprocess.run(uninstall_cmd, shell=True, timeout=300)
+                            
+                    self.log(f"  → Executing: {uninstall_cmd}")
+                    process = subprocess.run(uninstall_cmd, shell=True, timeout=600)
                     
-                    self.log("  ✓ Uninstaller completed")
+                    if process.returncode == 0:
+                        self.log("  ✓ Uninstaller completed")
+                    else:
+                        self.log(f"  ⚠️ Uninstaller exited with code: {process.returncode}")
                     time.sleep(2)
                     
                     # Scan and clean leftovers
@@ -763,6 +812,10 @@ class UninstallerApp:
                         os.path.expandvars(r"%PROGRAMDATA%"),
                         os.path.expandvars(r"%PROGRAMFILES%"),
                         os.path.expandvars(r"%PROGRAMFILES(X86)%"),
+                        os.path.expandvars(r"%TEMP%"),
+                        os.path.expandvars(r"%USERPROFILE%\Desktop"),
+                        os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Start Menu\Programs"),
+                        os.path.expandvars(r"%PROGRAMDATA%\Microsoft\Windows\Start Menu\Programs")
                     ]
                     
                     for location in locations:
@@ -866,7 +919,11 @@ class UninstallerApp:
                 os.path.expandvars(r"%LOCALAPPDATA%"),
                 os.path.expandvars(r"%PROGRAMDATA%"),
                 os.path.expandvars(r"%PROGRAMFILES%"),
-                os.path.expandvars(r"%PROGRAMFILES(X86)%")
+                os.path.expandvars(r"%PROGRAMFILES(X86)%"),
+                os.path.expandvars(r"%TEMP%"),
+                os.path.expandvars(r"%USERPROFILE%\Desktop"),
+                os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Start Menu\Programs"),
+                os.path.expandvars(r"%PROGRAMDATA%\Microsoft\Windows\Start Menu\Programs")
             ]
             
             for location in locations:
@@ -922,7 +979,89 @@ class UninstallerApp:
         messagebox.showinfo("Cleanup Complete", 
                           f"Successfully removed {cleaned} items.\n\n{failed} items could not be deleted (may require admin rights).")
 
+    def clean_registry_leftovers(self, app_name):
+        self.log(f"🔍 Scanning registry for leftovers...")
+        cleaned = 0
+        hives = [
+            (winreg.HKEY_CURRENT_USER, r"Software"),
+            (winreg.HKEY_LOCAL_MACHINE, r"Software"),
+            (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node")
+        ]
+        
+        search_terms = [app_name.lower()]
+        for word in app_name.lower().split():
+            if len(word) > 4 and word not in ['the', 'and', 'for', 'with']:
+                search_terms.append(word)
+
+        # Safe deletion: Only delete if the subkey matches the search term closely
+        for hive, path in hives:
+            try:
+                key = winreg.OpenKey(hive, path, 0, winreg.KEY_READ)
+                subkeys_to_delete = []
+                
+                # Enumerate subkeys
+                i = 0
+                while True:
+                    try:
+                        subkey_name = winreg.EnumKey(key, i)
+                        if any(term == subkey_name.lower() or term in subkey_name.lower() for term in search_terms):
+                            # Very important safety check to prevent destroying system keys
+                            if subkey_name.lower() not in ["microsoft", "windows", "policies", "classes", "clients", "intel", "amd", "nvidia", "google"]:
+                                subkeys_to_delete.append(subkey_name)
+                        i += 1
+                    except OSError:
+                        break
+                winreg.CloseKey(key)
+                
+                # Delete found subkeys
+                for subkey in subkeys_to_delete:
+                    try:
+                        self.delete_registry_key_recursive(hive, f"{path}\\{subkey}")
+                        self.log(f"  ✓ Cleaned registry: {path}\\{subkey}")
+                        cleaned += 1
+                    except Exception as e:
+                        pass
+            except Exception as e:
+                pass
+                
+        if cleaned > 0:
+            self.log(f"✓ Removed {cleaned} leftover registry keys")
+        else:
+            self.log("✓ No registry leftovers found")
+
+    def delete_registry_key_recursive(self, hive, key_path):
+        """Recursively delete a registry key and all its subkeys"""
+        try:
+            key = winreg.OpenKey(hive, key_path, 0, winreg.KEY_ALL_ACCESS)
+            # Delete all subkeys first
+            while True:
+                try:
+                    subkey_name = winreg.EnumKey(key, 0)
+                    self.delete_registry_key_recursive(hive, f"{key_path}\\{subkey_name}")
+                except OSError:
+                    break
+            winreg.CloseKey(key)
+            winreg.DeleteKey(hive, key_path)
+        except OSError:
+            pass
+
 if __name__ == "__main__":
+    import ctypes
+    import sys
+    
+    # Request admin rights if not already elevated
+    try:
+        is_admin = ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        is_admin = False
+        
+    if not is_admin:
+        try:
+            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+            sys.exit()
+        except:
+            pass
+            
     root = tk.Tk()
     app = UninstallerApp(root)
     root.mainloop()
