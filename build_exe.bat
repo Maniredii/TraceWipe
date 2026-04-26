@@ -9,7 +9,7 @@ pip install pyinstaller
 
 echo.
 echo Building executable...
-pyinstaller --onefile --windowed --name "TraceWipe" --icon=NONE uninstaller.py
+pyinstaller --onefile --windowed --name "TraceWipe" --icon="logo.ico" --add-data "logo.ico;." uninstaller.py
 
 echo.
 echo ========================================

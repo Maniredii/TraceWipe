@@ -5,6 +5,7 @@ import subprocess
 import os
 import shutil
 import threading
+import webbrowser
 from pathlib import Path
 from datetime import datetime
 
@@ -12,239 +13,239 @@ class UninstallerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("TraceWipe - Complete Uninstaller")
-        self.root.geometry("1000x650")
-        self.root.minsize(800, 600)
-        self.root.configure(bg="#f5f5f5")
+        self.root.geometry("1100x700")
+        self.root.minsize(1000, 650)
+        self.root.configure(bg="#f0f2f5")
         
         self.installed_apps = []
         self.selected_app = None
         self.selected_items = []
         
-        # Color scheme
+        # Modern Color scheme
         self.colors = {
-            'primary': '#2196F3',
+            'primary': '#0a192f',
+            'secondary': '#173d7a',
             'danger': '#f44336',
             'success': '#4CAF50',
             'warning': '#FF9800',
-            'bg': '#f5f5f5',
+            'bg': '#f0f2f5',
             'card': '#ffffff',
-            'text': '#333333',
-            'text_light': '#666666',
-            'border': '#e0e0e0'
+            'text': '#1e293b',
+            'text_light': '#64748b',
+            'border': '#e2e8f0',
+            'accent': '#3b82f6'
         }
         
         self.create_widgets()
         self.load_installed_apps()
-    
+        
+    def _create_gradient(self, canvas, width, height, color1, color2):
+        """Draw a horizontal gradient on a canvas."""
+        # Simple approximation of a gradient by drawing rectangles
+        r1, g1, b1 = canvas.winfo_rgb(color1)
+        r2, g2, b2 = canvas.winfo_rgb(color2)
+        
+        r_ratio = (r2 - r1) / width
+        g_ratio = (g2 - g1) / width
+        b_ratio = (b2 - b1) / width
+        
+        for i in range(width):
+            nr = int(r1 + (r_ratio * i))
+            ng = int(g1 + (g_ratio * i))
+            nb = int(b1 + (b_ratio * i))
+            color = f"#{nr>>8:02x}{ng>>8:02x}{nb>>8:02x}"
+            canvas.create_line(i, 0, i, height, fill=color)
+
     def create_widgets(self):
-        # Header Frame
-        header_frame = tk.Frame(self.root, bg=self.colors['primary'], height=90)
-        header_frame.pack(fill=tk.X)
-        header_frame.pack_propagate(False)
+        # ── Menu Bar ──
+        menubar = tk.Menu(self.root, bg='#1e293b', fg='white', activebackground=self.colors['accent'],
+                          activeforeground='white', font=('Segoe UI', 10), relief=tk.FLAT)
         
-        # Title with icon
-        title_container = tk.Frame(header_frame, bg=self.colors['primary'])
-        title_container.pack(expand=True)
+        # File menu
+        file_menu = tk.Menu(menubar, tearoff=0, bg='white', fg=self.colors['text'], font=('Segoe UI', 10))
+        file_menu.add_command(label="↻  Refresh List", command=self.load_installed_apps)
+        file_menu.add_separator()
+        file_menu.add_command(label="✕  Exit", command=self.root.quit)
+        menubar.add_cascade(label="File", menu=file_menu)
         
-        title = tk.Label(title_container, text="🗑️ TraceWipe", 
-                        font=("Segoe UI", 26, "bold"),
-                        bg=self.colors['primary'], fg="white")
-        title.pack(side=tk.LEFT, padx=10)
+        # Action menu
+        action_menu = tk.Menu(menubar, tearoff=0, bg='white', fg=self.colors['text'], font=('Segoe UI', 10))
+        action_menu.add_command(label="🗑️  Uninstall Selected", command=self.uninstall_app)
+        action_menu.add_command(label="📦  Batch Uninstall", command=self.batch_uninstall)
+        action_menu.add_command(label="⚡  Force Remove", command=self.force_remove)
+        action_menu.add_separator()
+        action_menu.add_command(label="🔍  Scan Leftovers", command=self.scan_leftovers)
+        action_menu.add_command(label="📁  Open File Location", command=self.open_selected_file_location)
+        menubar.add_cascade(label="Action", menu=action_menu)
         
-        subtitle = tk.Label(title_container, text="Complete Application Removal • No Traces Left Behind", 
-                           font=("Segoe UI", 10),
-                           bg=self.colors['primary'], fg="#e3f2fd")
-        subtitle.pack(side=tk.LEFT, padx=5)
+        # View menu
+        view_menu = tk.Menu(menubar, tearoff=0, bg='white', fg=self.colors['text'], font=('Segoe UI', 10))
+        view_menu.add_command(label="Select All", command=self.select_all)
+        view_menu.add_command(label="Clear Selection", command=self.clear_selection)
+        menubar.add_cascade(label="View", menu=view_menu)
+        
+        # Help menu
+        help_menu = tk.Menu(menubar, tearoff=0, bg='white', fg=self.colors['text'], font=('Segoe UI', 10))
+        help_menu.add_command(label="ℹ️  About TraceWipe", command=self.show_about_dialog)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        
+        self.root.config(menu=menubar)
+        
+        # Header Canvas for Gradient
+        header_canvas = tk.Canvas(self.root, height=120, bg=self.colors['primary'], highlightthickness=0)
+        header_canvas.pack(fill=tk.X)
+        # Get correct width
+        self.root.update_idletasks() 
+        width = self.root.winfo_width() if self.root.winfo_width() > 1 else 1920
+        # Draw gradient extra wide to cover window maximization
+        self._create_gradient(header_canvas, max(width, 4000), 120, self.colors['primary'], self.colors['secondary'])
+        
+        # Remove empty header_content frame that was obscuring the canvas
+        # Load Logo
+        try:
+            import base64
+            from assets import LOGO_B64
+            self.logo_img = tk.PhotoImage(data=LOGO_B64)
+            # Center the 120x120 logo in the 120px tall header
+            header_canvas.create_image(40, 60, image=self.logo_img, anchor=tk.W)
+            text_x = 180
+        except Exception as e:
+            text_x = 40
+            
+        header_canvas.create_text(text_x, 45, text="TraceWipe", font=("Segoe UI", 28, "bold"), fill="white", anchor=tk.W)
+        header_canvas.create_text(text_x, 85, text="Complete Application Removal • No Traces Left Behind", font=("Segoe UI", 11), fill="#cbd5e1", anchor=tk.W)
+        
+        # About Us button on top-right of header
+        about_btn = tk.Button(self.root, text="ℹ  About Us", font=("Segoe UI", 10),
+                              bg="#1e3a5f", fg="#e2e8f0", relief=tk.FLAT, bd=0,
+                              activebackground="#2d4a6f", activeforeground="white",
+                              cursor="hand2", padx=14, pady=4,
+                              command=self.show_about_dialog)
+        header_canvas.create_window(width - 30, 20, anchor=tk.NE, window=about_btn)
         
         # Main content area
         content_frame = tk.Frame(self.root, bg=self.colors['bg'])
-        content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=20)
         
-        # Stats bar
-        stats_frame = tk.Frame(content_frame, bg=self.colors['card'], relief=tk.FLAT)
-        stats_frame.pack(fill=tk.X, pady=(0, 15))
+        # Stats and Actions Card (Horizontal)
+        top_card = tk.Frame(content_frame, bg=self.colors['card'], relief=tk.FLAT, bd=0)
+        top_card.pack(fill=tk.X, pady=(0, 20))
         
-        # Total Apps stat
-        total_box = tk.Frame(stats_frame, bg=self.colors['card'])
-        total_box.pack(side=tk.LEFT, padx=20, pady=15)
-        self.total_apps_stat = tk.Label(total_box, text="0", font=("Segoe UI", 20, "bold"),
-                                        bg=self.colors['card'], fg=self.colors['primary'])
+        # Stats area (Left)
+        stats_area = tk.Frame(top_card, bg=self.colors['card'])
+        stats_area.pack(side=tk.LEFT, padx=30, pady=20)
+        
+        total_box = tk.Frame(stats_area, bg=self.colors['card'])
+        total_box.pack(side=tk.LEFT, padx=(0, 40))
+        self.total_apps_stat = tk.Label(total_box, text="0", font=("Segoe UI", 28, "bold"), bg=self.colors['card'], fg=self.colors['accent'])
         self.total_apps_stat.pack()
-        tk.Label(total_box, text="Total Apps", font=("Segoe UI", 9),
-                bg=self.colors['card'], fg=self.colors['text_light']).pack()
+        tk.Label(total_box, text="Total Applications", font=("Segoe UI", 10), bg=self.colors['card'], fg=self.colors['text_light']).pack()
         
-        # Selected stat
-        selected_box = tk.Frame(stats_frame, bg=self.colors['card'])
-        selected_box.pack(side=tk.LEFT, padx=20, pady=15)
-        self.selected_stat = tk.Label(selected_box, text="0", font=("Segoe UI", 20, "bold"),
-                                      bg=self.colors['card'], fg=self.colors['warning'])
+        selected_box = tk.Frame(stats_area, bg=self.colors['card'])
+        selected_box.pack(side=tk.LEFT)
+        self.selected_stat = tk.Label(selected_box, text="0", font=("Segoe UI", 28, "bold"), bg=self.colors['card'], fg=self.colors['success'])
         self.selected_stat.pack()
-        tk.Label(selected_box, text="Selected", font=("Segoe UI", 9),
-                bg=self.colors['card'], fg=self.colors['text_light']).pack()
+        tk.Label(selected_box, text="Selected", font=("Segoe UI", 10), bg=self.colors['card'], fg=self.colors['text_light']).pack()
+        
+        # Divider
+        tk.Frame(top_card, width=1, bg=self.colors['border']).pack(side=tk.LEFT, fill=tk.Y, pady=15, padx=20)
+        
+        # Actions area (Right)
+        actions_area = tk.Frame(top_card, bg=self.colors['card'])
+        actions_area.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=20, pady=15)
+        
+        def create_action_btn(parent, icon, title, subtitle, command, color):
+            btn_frame = tk.Frame(parent, bg=self.colors['card'], cursor="hand2")
+            btn_frame.pack(side=tk.LEFT, expand=True)
+            
+            icon_lbl = tk.Label(btn_frame, text=icon, font=("Segoe UI", 20), fg=color, bg=self.colors['card'])
+            icon_lbl.pack()
+            title_lbl = tk.Label(btn_frame, text=title, font=("Segoe UI", 11, "bold"), fg=self.colors['text'], bg=self.colors['card'])
+            title_lbl.pack()
+            sub_lbl = tk.Label(btn_frame, text=subtitle, font=("Segoe UI", 8), fg=self.colors['text_light'], bg=self.colors['card'])
+            sub_lbl.pack()
+            
+            # Bind clicks
+            for w in [btn_frame, icon_lbl, title_lbl, sub_lbl]:
+                w.bind("<Button-1>", lambda e, c=command: c())
+                w.bind("<Enter>", lambda e, bf=btn_frame: btn_frame.configure(bg="#f8fafc"))
+                w.bind("<Leave>", lambda e, bf=btn_frame: btn_frame.configure(bg=self.colors['card']))
+                
+        create_action_btn(actions_area, "🗑️", "Uninstall", "Uninstall selected apps", self.uninstall_app, self.colors['accent'])
+        create_action_btn(actions_area, "⚡", "Force Remove", "Remove stubborn apps", self.force_remove, self.colors['danger'])
+        create_action_btn(actions_area, "🔍", "Deep Scan", "Find leftover traces", self.scan_leftovers, self.colors['primary'])
+        create_action_btn(actions_area, "↻", "Refresh", "Refresh application list", self.load_installed_apps, self.colors['success'])
         
         # App list card
-        list_card = tk.Frame(content_frame, bg=self.colors['card'], 
-                            relief=tk.FLAT, bd=0)
-        list_card.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        list_card = tk.Frame(content_frame, bg=self.colors['card'], relief=tk.FLAT, bd=0)
+        list_card.pack(fill=tk.BOTH, expand=True)
         
-        # Card header with controls
+        # Card header with search and sort
         list_header = tk.Frame(list_card, bg=self.colors['card'])
         list_header.pack(fill=tk.X, padx=20, pady=(15, 10))
         
-        tk.Label(list_header, text="📋 Installed Applications", 
-                font=("Segoe UI", 13, "bold"),
-                bg=self.colors['card'], fg=self.colors['text']).pack(side=tk.LEFT)
-        
-        # Sort options
-        sort_frame = tk.Frame(list_header, bg=self.colors['card'])
-        sort_frame.pack(side=tk.RIGHT)
-        
-        tk.Label(sort_frame, text="Sort by:", font=("Segoe UI", 9),
-                bg=self.colors['card'], fg=self.colors['text_light']).pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.sort_var = tk.StringVar(value="Name")
-        sort_combo = ttk.Combobox(sort_frame, textvariable=self.sort_var, 
-                                 values=["Name", "Publisher", "Size"], 
-                                 state="readonly", width=12, font=("Segoe UI", 9))
-        sort_combo.pack(side=tk.LEFT)
-        sort_combo.bind("<<ComboboxSelected>>", lambda e: self.sort_apps())
+        tk.Label(list_header, text="📱 Installed Applications", font=("Segoe UI", 12, "bold"), bg=self.colors['card'], fg=self.colors['text']).pack(side=tk.LEFT)
         
         # Search box
-        search_frame = tk.Frame(list_card, bg=self.colors['card'])
-        search_frame.pack(fill=tk.X, padx=20, pady=(0, 10))
-        
-        tk.Label(search_frame, text="🔍", font=("Segoe UI", 12),
-                bg=self.colors['card']).pack(side=tk.LEFT, padx=(0, 5))
-        
+        search_frame = tk.Frame(list_header, bg="#f1f5f9", relief=tk.FLAT, bd=1)
+        search_frame.pack(side=tk.LEFT, padx=30, fill=tk.X, expand=True)
+        tk.Label(search_frame, text="🔍", font=("Segoe UI", 10), bg="#f1f5f9", fg=self.colors['text_light']).pack(side=tk.LEFT, padx=10)
         self.search_var = tk.StringVar()
         self.search_var.trace('w', self.filter_apps)
-        search_entry = tk.Entry(search_frame, textvariable=self.search_var,
-                               font=("Segoe UI", 10), relief=tk.FLAT,
-                               bg="#f9f9f9", fg=self.colors['text'])
-        search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=6)
+        search_entry = tk.Entry(search_frame, textvariable=self.search_var, font=("Segoe UI", 10), relief=tk.FLAT, bg="#f1f5f9", fg=self.colors['text'])
+        search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=8)
         search_entry.insert(0, "Search applications...")
         search_entry.bind("<FocusIn>", lambda e: search_entry.delete(0, tk.END) if search_entry.get() == "Search applications..." else None)
         search_entry.bind("<FocusOut>", lambda e: search_entry.insert(0, "Search applications...") if not search_entry.get() else None)
         
-        # Treeview with custom style and checkboxes
+        # Sort options
+        sort_frame = tk.Frame(list_header, bg=self.colors['card'])
+        sort_frame.pack(side=tk.RIGHT)
+        tk.Label(sort_frame, text="Sort by:", font=("Segoe UI", 9), bg=self.colors['card'], fg=self.colors['text_light']).pack(side=tk.LEFT, padx=(0, 5))
+        self.sort_var = tk.StringVar(value="Name")
+        sort_combo = ttk.Combobox(sort_frame, textvariable=self.sort_var, values=["Name", "Publisher", "Size"], state="readonly", width=12, font=("Segoe UI", 9))
+        sort_combo.pack(side=tk.LEFT)
+        sort_combo.bind("<<ComboboxSelected>>", lambda e: self.sort_apps())
+        
+        # Treeview
         style = ttk.Style()
         style.theme_use('clam')
-        style.configure("Treeview",
-                       background=self.colors['card'],
-                       foreground=self.colors['text'],
-                       fieldbackground=self.colors['card'],
-                       borderwidth=0,
-                       rowheight=28,
-                       font=("Segoe UI", 9))
-        style.configure("Treeview.Heading",
-                       background="#f0f0f0",
-                       foreground=self.colors['text'],
-                       borderwidth=0,
-                       font=("Segoe UI", 10, "bold"))
-        style.map('Treeview', background=[('selected', self.colors['primary'])])
+        style.configure("Treeview", background=self.colors['card'], foreground=self.colors['text'], fieldbackground=self.colors['card'], borderwidth=0, rowheight=32, font=("Segoe UI", 9))
+        style.configure("Treeview.Heading", background="#f8fafc", foreground=self.colors['text_light'], borderwidth=0, font=("Segoe UI", 9, "bold"))
+        style.map('Treeview', background=[('selected', '#e2e8f0')], foreground=[('selected', self.colors['text'])])
         
         tree_frame = tk.Frame(list_card, bg=self.colors['card'])
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 15))
         
-        columns = ("Select", "Name", "Publisher", "Version", "Size")
-        self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=14)
-        
+        columns = ("Select", "Name", "Publisher", "Version", "Size", "InstalledOn")
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=10)
         self.tree.heading("Select", text="☐")
         self.tree.heading("Name", text="Application Name")
         self.tree.heading("Publisher", text="Publisher")
         self.tree.heading("Version", text="Version")
         self.tree.heading("Size", text="Size")
+        self.tree.heading("InstalledOn", text="Installed On")
         
-        self.tree.column("Select", width=50, anchor="center")
-        self.tree.column("Name", width=350)
-        self.tree.column("Publisher", width=200)
-        self.tree.column("Version", width=100)
-        self.tree.column("Size", width=100, anchor="center")
+        self.tree.column("Select", width=40, anchor="center")
+        self.tree.column("Name", width=300)
+        self.tree.column("Publisher", width=180)
+        self.tree.column("Version", width=90)
+        self.tree.column("Size", width=80, anchor="center")
+        self.tree.column("InstalledOn", width=100, anchor="center")
         
-        # Bind click events
         self.tree.bind("<Button-1>", self.on_tree_click)
         self.tree.bind("<Button-3>", self.show_context_menu)
+        self.tree.bind("<Double-1>", self.on_tree_double_click)
         
         scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
-        
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Action buttons with modern styling
-        btn_frame = tk.Frame(content_frame, bg=self.colors['bg'])
-        btn_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        # Button style helper
-        def create_button(parent, text, command, bg_color, icon=""):
-            btn = tk.Button(parent, text=f"{icon} {text}".strip(), command=command,
-                          bg=bg_color, fg="white", font=("Segoe UI", 10, "bold"),
-                          relief=tk.FLAT, cursor="hand2", padx=20, pady=12,
-                          activebackground=bg_color, activeforeground="white")
-            btn.pack(side=tk.LEFT, padx=5)
-            
-            # Hover effect
-            def on_enter(e):
-                btn['background'] = self.adjust_color(bg_color, -20)
-            def on_leave(e):
-                btn['background'] = bg_color
-            btn.bind("<Enter>", on_enter)
-            btn.bind("<Leave>", on_leave)
-            return btn
-        
-        create_button(btn_frame, "Refresh List", self.load_installed_apps, 
-                     self.colors['success'], "↻")
-        create_button(btn_frame, "Uninstall Selected", self.uninstall_app, 
-                     self.colors['danger'], "✕")
-        create_button(btn_frame, "Batch Uninstall", self.batch_uninstall, 
-                     self.colors['warning'], "📦")
-        create_button(btn_frame, "Scan Leftovers", self.scan_leftovers, 
-                     self.colors['primary'], "🔍")
-        create_button(btn_frame, "Force Remove", self.force_remove, 
-                     "#9C27B0", "⚡")
-        
-        # Quick actions on the right
-        quick_frame = tk.Frame(btn_frame, bg=self.colors['bg'])
-        quick_frame.pack(side=tk.RIGHT)
-        
-        tk.Button(quick_frame, text="Select All", command=self.select_all,
-                 bg="#607D8B", fg="white", font=("Segoe UI", 9),
-                 relief=tk.FLAT, cursor="hand2", padx=15, pady=8).pack(side=tk.LEFT, padx=2)
-        
-        tk.Button(quick_frame, text="Clear Selection", command=self.clear_selection,
-                 bg="#607D8B", fg="white", font=("Segoe UI", 9),
-                 relief=tk.FLAT, cursor="hand2", padx=15, pady=8).pack(side=tk.LEFT, padx=2)
-        
-        # Log card
-        log_card = tk.Frame(content_frame, bg=self.colors['card'], 
-                           relief=tk.FLAT, bd=0)
-        log_card.pack(fill=tk.X, expand=False)
-        
-        log_header = tk.Frame(log_card, bg=self.colors['card'])
-        log_header.pack(fill=tk.X, padx=20, pady=(15, 10))
-        
-        tk.Label(log_header, text="📝 Activity Log", 
-                font=("Segoe UI", 12, "bold"),
-                bg=self.colors['card'], fg=self.colors['text']).pack(side=tk.LEFT)
-        
-        # Clear log button
-        tk.Button(log_header, text="Clear Log", command=self.clear_log,
-                 bg="#607D8B", fg="white", font=("Segoe UI", 8),
-                 relief=tk.FLAT, cursor="hand2", padx=10, pady=4).pack(side=tk.RIGHT)
-        
-        log_content = tk.Frame(log_card, bg=self.colors['card'])
-        log_content.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 15))
-        
-        self.log_text = scrolledtext.ScrolledText(log_content, height=7, wrap=tk.WORD,
-                                                  font=("Consolas", 9),
-                                                  bg="#f9f9f9", fg=self.colors['text'],
-                                                  relief=tk.FLAT, padx=10, pady=10)
-        self.log_text.pack(fill=tk.BOTH, expand=True)
-        
-        # Welcome message
-        self.log("Welcome to TraceWipe! 🎉")
-        self.log("Select apps and click 'Uninstall Selected' or use 'Batch Uninstall' for multiple apps.")
-    
+        # Log frame hidden by default, expandable if needed, or put at bottom
+        self.log_frame = tk.Frame(self.root, bg=self.colors['card'])
+        self.log_text = scrolledtext.ScrolledText(self.log_frame, height=5, font=("Consolas", 9))
+        # Not packing log to match UI, we will popup log or print it
     def on_tree_click(self, event):
         """Handle clicks in the tree - select row and toggle checkbox"""
         region = self.tree.identify("region", event.x, event.y)
@@ -267,29 +268,154 @@ class UninstallerApp:
                             self.selected_items.remove(item)
                     self.update_selected_count()
                     
+    def on_tree_double_click(self, event):
+        """Handle double-click on a row to open install location"""
+        item = self.tree.identify_row(event.y)
+        if item:
+            app_name = self.tree.item(item)["values"][1]
+            app = next((a for a in self.installed_apps if a["name"] == app_name), None)
+            if app and app.get("install_location") and os.path.exists(app["install_location"]):
+                os.startfile(app["install_location"])
+                self.log(f"📁 Opened folder: {app['install_location']}")
+            else:
+                self.log(f"⚠️ Install location not available for {app_name}")
+    
+    def open_selected_file_location(self):
+        """Open file location of the currently selected app (from menu bar)"""
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showinfo("No Selection", "Please select an application first.")
+            return
+        item = selection[0]
+        app_name = self.tree.item(item)["values"][1]
+        app = next((a for a in self.installed_apps if a["name"] == app_name), None)
+        if app and app.get("install_location") and os.path.exists(app["install_location"]):
+            os.startfile(app["install_location"])
+            self.log(f"📁 Opened folder: {app['install_location']}")
+        else:
+            messagebox.showinfo("Not Found", f"Install location is not available for '{app_name}'.")
+    
+    def show_about_dialog(self):
+        """Show About dialog with developer info and clickable links"""
+        about_win = tk.Toplevel(self.root)
+        about_win.title("About TraceWipe")
+        about_win.geometry("520x500")
+        about_win.resizable(False, False)
+        about_win.configure(bg="#0a192f")
+        about_win.transient(self.root)
+        about_win.grab_set()
+        
+        # Center on parent
+        about_win.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - 520) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 500) // 2
+        about_win.geometry(f"+{x}+{y}")
+        
+        # Logo area
+        try:
+            logo_lbl = tk.Label(about_win, image=self.logo_img, bg="#0a192f")
+            logo_lbl.pack(pady=(20, 3))
+        except:
+            pass
+        
+        tk.Label(about_win, text="TraceWipe", font=("Segoe UI", 24, "bold"),
+                 bg="#0a192f", fg="white").pack(pady=(3, 0))
+        tk.Label(about_win, text="Complete Application Removal Engine", font=("Segoe UI", 10),
+                 bg="#0a192f", fg="#94a3b8").pack()
+        tk.Label(about_win, text="Version 1.0.0", font=("Segoe UI", 9),
+                 bg="#0a192f", fg="#64748b").pack(pady=(2, 12))
+        
+        # Divider
+        tk.Frame(about_win, height=1, bg="#1e3a5f").pack(fill=tk.X, padx=60)
+        
+        # Developer info
+        tk.Label(about_win, text="Developer", font=("Segoe UI", 9, "bold"),
+                 bg="#0a192f", fg="#64748b").pack(pady=(12, 2))
+        tk.Label(about_win, text="Manideep Reddy Eevuri", font=("Segoe UI", 14, "bold"),
+                 bg="#0a192f", fg="white").pack()
+        
+        # Links frame
+        links_frame = tk.Frame(about_win, bg="#0a192f")
+        links_frame.pack(pady=(12, 0))
+        
+        # GitHub link
+        gh_frame = tk.Frame(links_frame, bg="#0a192f", cursor="hand2")
+        gh_frame.pack(pady=3)
+        gh_icon = tk.Label(gh_frame, text="\U0001F517", font=("Segoe UI", 11), bg="#0a192f", fg="white")
+        gh_icon.pack(side=tk.LEFT)
+        gh_link = tk.Label(gh_frame, text="github.com/Maniredii", font=("Segoe UI", 11, "underline"),
+                           bg="#0a192f", fg="#3b82f6", cursor="hand2")
+        gh_link.pack(side=tk.LEFT, padx=5)
+        for w in [gh_frame, gh_icon, gh_link]:
+            w.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/Maniredii"))
+            w.bind("<Enter>", lambda e: gh_link.configure(fg="#60a5fa"))
+            w.bind("<Leave>", lambda e: gh_link.configure(fg="#3b82f6"))
+        
+        # LinkedIn link
+        li_frame = tk.Frame(links_frame, bg="#0a192f", cursor="hand2")
+        li_frame.pack(pady=3)
+        li_icon = tk.Label(li_frame, text="\U0001F4BC", font=("Segoe UI", 11), bg="#0a192f", fg="white")
+        li_icon.pack(side=tk.LEFT)
+        li_link = tk.Label(li_frame, text="linkedin.com/in/manideep-reddy-eevuri", font=("Segoe UI", 11, "underline"),
+                           bg="#0a192f", fg="#3b82f6", cursor="hand2")
+        li_link.pack(side=tk.LEFT, padx=5)
+        for w in [li_frame, li_icon, li_link]:
+            w.bind("<Button-1>", lambda e: webbrowser.open("https://www.linkedin.com/in/manideep-reddy-eevuri-661659268/"))
+            w.bind("<Enter>", lambda e: li_link.configure(fg="#60a5fa"))
+            w.bind("<Leave>", lambda e: li_link.configure(fg="#3b82f6"))
+        
+        # Divider
+        tk.Frame(about_win, height=1, bg="#1e3a5f").pack(fill=tk.X, padx=60, pady=(12, 8))
+        
+        # Contact message
+        tk.Label(about_win, text="Want to reach me?",
+                 font=("Segoe UI", 10, "bold"), bg="#0a192f", fg="#94a3b8").pack(pady=(0, 2))
+        
+        contact_msg = tk.Label(about_win,
+                 text="LinkedIn is the fastest way to contact me \u2014 feel free to connect!",
+                 font=("Segoe UI", 10), bg="#0a192f", fg="#60a5fa", cursor="hand2")
+        contact_msg.pack()
+        contact_msg.bind("<Button-1>", lambda e: webbrowser.open("https://www.linkedin.com/in/manideep-reddy-eevuri-661659268/"))
+        contact_msg.bind("<Enter>", lambda e: contact_msg.configure(fg="#93c5fd", font=("Segoe UI", 10, "underline")))
+        contact_msg.bind("<Leave>", lambda e: contact_msg.configure(fg="#60a5fa", font=("Segoe UI", 10)))
+        
+        # Divider
+        tk.Frame(about_win, height=1, bg="#1e3a5f").pack(fill=tk.X, padx=60, pady=(10, 8))
+        
+        tk.Label(about_win, text="\u00a9 2026 TraceWipe. All rights reserved.",
+                 font=("Segoe UI", 8), bg="#0a192f", fg="#475569").pack(pady=(0, 3))
+        
+        # Close button
+        close_btn = tk.Button(about_win, text="Close", command=about_win.destroy,
+                              bg="#3b82f6", fg="white", font=("Segoe UI", 10, "bold"),
+                              relief=tk.FLAT, padx=30, pady=6, cursor="hand2")
+        close_btn.pack(pady=(3, 15))
+    
     def show_context_menu(self, event):
         """Show right-click context menu for the selected app"""
         item = self.tree.identify_row(event.y)
         if item:
             self.tree.selection_set(item)
-            menu = tk.Menu(self.root, tearoff=0)
-            menu.add_command(label="✕ Uninstall", command=self.uninstall_app)
-            menu.add_command(label="⚡ Force Remove", command=self.force_remove)
+            menu = tk.Menu(self.root, tearoff=0, font=('Segoe UI', 10))
+            menu.add_command(label="✕  Uninstall", command=self.uninstall_app)
+            menu.add_command(label="⚡  Force Remove", command=self.force_remove)
             
             app_name = self.tree.item(item)["values"][1]
             app = next((a for a in self.installed_apps if a["name"] == app_name), None)
             
+            menu.add_separator()
             if app and app.get("install_location") and os.path.exists(app["install_location"]):
-                menu.add_separator()
-                menu.add_command(label="📁 Open Install Folder", 
+                menu.add_command(label="📁  Open File Location", 
                                command=lambda: os.startfile(app["install_location"]))
+            else:
+                menu.add_command(label="📁  Open File Location", state=tk.DISABLED)
             
             if app and app.get("registry_path"):
-                menu.add_command(label="🔧 Open Registry Entry",
+                menu.add_command(label="🔧  Open Registry Entry",
                                command=lambda: self.open_registry_key(app["registry_path"]))
             
             menu.add_separator()
-            menu.add_command(label="📋 Copy App Info", 
+            menu.add_command(label="📋  Copy App Info", 
                            command=lambda: self.copy_app_info(app))
             
             menu.post(event.x_root, event.y_root)
@@ -382,7 +508,8 @@ class UninstallerApp:
         for app in filtered_apps:
             size_str = app.get("size_str", "Unknown")
             self.tree.insert("", tk.END, values=("☐", app["name"], app["publisher"], 
-                                                 app["version"], size_str))
+                                                 app["version"], size_str,
+                                                 app.get("install_date", "")))
         
         self.update_selected_count()
     
@@ -437,6 +564,17 @@ class UninstallerApp:
                             except:
                                 install_location = ""
                             
+                            # Read install date
+                            install_date_str = ""
+                            try:
+                                raw_date = winreg.QueryValueEx(subkey, "InstallDate")[0]
+                                if raw_date and len(raw_date) == 8:
+                                    install_date_str = f"{raw_date[0:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+                                elif raw_date:
+                                    install_date_str = str(raw_date)
+                            except:
+                                pass
+                            
                             if name and uninstall_string:
                                 # Convert size to readable format
                                 if size > 0:
@@ -456,6 +594,7 @@ class UninstallerApp:
                                     "install_location": install_location,
                                     "size": size,
                                     "size_str": size_str,
+                                    "install_date": install_date_str,
                                     "registry_path": ("HKEY_LOCAL_MACHINE\\" if hive == winreg.HKEY_LOCAL_MACHINE else "HKEY_CURRENT_USER\\") + key_path + "\\" + subkey_name
                                 })
                         except:
@@ -493,7 +632,8 @@ class UninstallerApp:
         # Populate tree
         for app in self.installed_apps:
             self.tree.insert("", tk.END, values=("☐", app["name"], app["publisher"], 
-                                                 app["version"], app["size_str"]))
+                                                 app["version"], app["size_str"],
+                                                 app.get("install_date", "")))
         
         self.total_apps_stat.config(text=str(len(self.installed_apps)))
         self.update_selected_count()
@@ -1052,16 +1192,54 @@ if __name__ == "__main__":
     # Request admin rights if not already elevated
     try:
         is_admin = ctypes.windll.shell32.IsUserAnAdmin()
-    except:
+    except Exception:
         is_admin = False
         
     if not is_admin:
         try:
-            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
-            sys.exit()
+            # Re-launch with admin privileges
+            ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", sys.executable, " ".join(sys.argv), None, 1
+            )
+        except Exception:
+            # User declined UAC or elevation failed — run without admin
+            pass
+        else:
+            # Elevation succeeded — kill this non-admin instance immediately
+            # os._exit bypasses all cleanup and cannot be caught by except
+            os._exit(0)
+            
+    # Tell Windows to use our custom icon in the taskbar instead of the default Python feather
+    try:
+        myappid = 'maniredii.tracewipe.uninstaller.1.0'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except:
+        pass
+        
+    root = tk.Tk()
+    
+    # Set application window and taskbar icon using the absolute path to the .ico file
+    try:
+        import os, sys
+        # Handle PyInstaller temp directory or normal script directory
+        if getattr(sys, 'frozen', False):
+            base_dir = sys._MEIPASS
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            
+        icon_path = os.path.join(base_dir, 'logo.ico')
+        if os.path.exists(icon_path):
+            root.iconbitmap(icon_path)
+            
+        # Also set iconphoto as a strong fallback (True makes it apply to all windows and taskbar)
+        try:
+            from assets import LOGO_B64
+            icon_img = tk.PhotoImage(data=LOGO_B64)
+            root.iconphoto(True, icon_img)
         except:
             pass
-            
-    root = tk.Tk()
+    except Exception as e:
+        print("Failed to set icon:", e)
+        
     app = UninstallerApp(root)
     root.mainloop()

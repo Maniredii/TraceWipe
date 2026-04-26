@@ -1,0 +1,30 @@
+# Images and Promotional Materials
+/images/
+promo_main.png
+promo_about.png
+*.png
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller Build Artifacts
+build/
+dist/
+*.spec
+*.exe
+
+# Temporary Developer Scripts and Output
+logo_b64.txt
+capture_linkedin.py
+record_demo.py
+encode.py
+rewrite_ui.py
+process_logo.py
+uninstaller_temp.py
+
+# Virtual Environments
+venv/
+env/
+.env
