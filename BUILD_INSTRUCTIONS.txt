@@ -1,5 +1,5 @@
 ========================================
-HOW TO CREATE THE .EXE FILE
+HOW TO CREATE THE TRACEWIPE .EXE FILE
 ========================================
 
 METHOD 1: AUTOMATIC (EASIEST)
@@ -7,7 +7,7 @@ METHOD 1: AUTOMATIC (EASIEST)
 1. Double-click "build_exe.bat"
 2. Wait for the process to complete
 3. Your .exe file will be in the "dist" folder
-4. File name: AdvancedUninstaller.exe
+4. File name: TraceWipe.exe
 
 
 METHOD 2: MANUAL
@@ -17,7 +17,7 @@ METHOD 2: MANUAL
 3. Run these commands:
 
    pip install pyinstaller
-   pyinstaller --onefile --windowed --name "AdvancedUninstaller" uninstaller.py
+   pyinstaller --onefile --windowed --name "TraceWipe" uninstaller.py
 
 4. Your .exe will be in the "dist" folder
 
@@ -26,13 +26,13 @@ WHAT THE BUILD OPTIONS MEAN:
 ------------------------------
 --onefile       : Creates a single .exe file (not a folder)
 --windowed      : No console window appears (GUI only)
---name          : Names your executable "AdvancedUninstaller.exe"
+--name          : Names your executable "TraceWipe.exe"
 
 
 AFTER BUILDING:
 ------------------------------
 1. Go to the "dist" folder
-2. Find "AdvancedUninstaller.exe"
+2. Find "TraceWipe.exe"
 3. You can copy this file anywhere
 4. Right-click and "Run as Administrator" to use it
 

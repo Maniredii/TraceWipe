@@ -6,22 +6,25 @@ import os
 import shutil
 import threading
 from pathlib import Path
+from datetime import datetime
 
 class UninstallerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("TraceWipe - Complete Uninstaller")
-        self.root.geometry("1000x750")
+        self.root.geometry("1100x800")
         self.root.configure(bg="#f5f5f5")
         
         self.installed_apps = []
         self.selected_app = None
+        self.selected_items = []
         
         # Color scheme
         self.colors = {
             'primary': '#2196F3',
             'danger': '#f44336',
             'success': '#4CAF50',
+            'warning': '#FF9800',
             'bg': '#f5f5f5',
             'card': '#ffffff',
             'text': '#333333',
@@ -34,7 +37,7 @@ class UninstallerApp:
     
     def create_widgets(self):
         # Header Frame
-        header_frame = tk.Frame(self.root, bg=self.colors['primary'], height=80)
+        header_frame = tk.Frame(self.root, bg=self.colors['primary'], height=90)
         header_frame.pack(fill=tk.X)
         header_frame.pack_propagate(False)
         
@@ -42,12 +45,12 @@ class UninstallerApp:
         title_container = tk.Frame(header_frame, bg=self.colors['primary'])
         title_container.pack(expand=True)
         
-        title = tk.Label(title_container, text="TraceWipe", 
-                        font=("Segoe UI", 24, "bold"),
+        title = tk.Label(title_container, text="🗑️ TraceWipe", 
+                        font=("Segoe UI", 26, "bold"),
                         bg=self.colors['primary'], fg="white")
         title.pack(side=tk.LEFT, padx=10)
         
-        subtitle = tk.Label(title_container, text="Complete Application Removal", 
+        subtitle = tk.Label(title_container, text="Complete Application Removal • No Traces Left Behind", 
                            font=("Segoe UI", 10),
                            bg=self.colors['primary'], fg="#e3f2fd")
         subtitle.pack(side=tk.LEFT, padx=5)
@@ -56,40 +59,73 @@ class UninstallerApp:
         content_frame = tk.Frame(self.root, bg=self.colors['bg'])
         content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
+        # Stats bar
+        stats_frame = tk.Frame(content_frame, bg=self.colors['card'], relief=tk.FLAT)
+        stats_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Total Apps stat
+        total_box = tk.Frame(stats_frame, bg=self.colors['card'])
+        total_box.pack(side=tk.LEFT, padx=20, pady=15)
+        self.total_apps_stat = tk.Label(total_box, text="0", font=("Segoe UI", 20, "bold"),
+                                        bg=self.colors['card'], fg=self.colors['primary'])
+        self.total_apps_stat.pack()
+        tk.Label(total_box, text="Total Apps", font=("Segoe UI", 9),
+                bg=self.colors['card'], fg=self.colors['text_light']).pack()
+        
+        # Selected stat
+        selected_box = tk.Frame(stats_frame, bg=self.colors['card'])
+        selected_box.pack(side=tk.LEFT, padx=20, pady=15)
+        self.selected_stat = tk.Label(selected_box, text="0", font=("Segoe UI", 20, "bold"),
+                                      bg=self.colors['card'], fg=self.colors['warning'])
+        self.selected_stat.pack()
+        tk.Label(selected_box, text="Selected", font=("Segoe UI", 9),
+                bg=self.colors['card'], fg=self.colors['text_light']).pack()
+        
         # App list card
         list_card = tk.Frame(content_frame, bg=self.colors['card'], 
                             relief=tk.FLAT, bd=0)
         list_card.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
         
-        # Card header
+        # Card header with controls
         list_header = tk.Frame(list_card, bg=self.colors['card'])
         list_header.pack(fill=tk.X, padx=20, pady=(15, 10))
         
-        tk.Label(list_header, text="Installed Applications", 
-                font=("Segoe UI", 12, "bold"),
+        tk.Label(list_header, text="📋 Installed Applications", 
+                font=("Segoe UI", 13, "bold"),
                 bg=self.colors['card'], fg=self.colors['text']).pack(side=tk.LEFT)
         
-        self.app_count_label = tk.Label(list_header, text="0 apps", 
-                                        font=("Segoe UI", 9),
-                                        bg=self.colors['card'], 
-                                        fg=self.colors['text_light'])
-        self.app_count_label.pack(side=tk.LEFT, padx=10)
+        # Sort options
+        sort_frame = tk.Frame(list_header, bg=self.colors['card'])
+        sort_frame.pack(side=tk.RIGHT)
+        
+        tk.Label(sort_frame, text="Sort by:", font=("Segoe UI", 9),
+                bg=self.colors['card'], fg=self.colors['text_light']).pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.sort_var = tk.StringVar(value="Name")
+        sort_combo = ttk.Combobox(sort_frame, textvariable=self.sort_var, 
+                                 values=["Name", "Publisher", "Size"], 
+                                 state="readonly", width=12, font=("Segoe UI", 9))
+        sort_combo.pack(side=tk.LEFT)
+        sort_combo.bind("<<ComboboxSelected>>", lambda e: self.sort_apps())
         
         # Search box
         search_frame = tk.Frame(list_card, bg=self.colors['card'])
         search_frame.pack(fill=tk.X, padx=20, pady=(0, 10))
         
-        tk.Label(search_frame, text="Search:", font=("Segoe UI", 9),
-                bg=self.colors['card'], fg=self.colors['text_light']).pack(side=tk.LEFT, padx=(0, 5))
+        tk.Label(search_frame, text="🔍", font=("Segoe UI", 12),
+                bg=self.colors['card']).pack(side=tk.LEFT, padx=(0, 5))
         
         self.search_var = tk.StringVar()
         self.search_var.trace('w', self.filter_apps)
         search_entry = tk.Entry(search_frame, textvariable=self.search_var,
                                font=("Segoe UI", 10), relief=tk.FLAT,
                                bg="#f9f9f9", fg=self.colors['text'])
-        search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=5)
+        search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=6)
+        search_entry.insert(0, "Search applications...")
+        search_entry.bind("<FocusIn>", lambda e: search_entry.delete(0, tk.END) if search_entry.get() == "Search applications..." else None)
+        search_entry.bind("<FocusOut>", lambda e: search_entry.insert(0, "Search applications...") if not search_entry.get() else None)
         
-        # Treeview with custom style
+        # Treeview with custom style and checkboxes
         style = ttk.Style()
         style.theme_use('clam')
         style.configure("Treeview",
@@ -97,6 +133,7 @@ class UninstallerApp:
                        foreground=self.colors['text'],
                        fieldbackground=self.colors['card'],
                        borderwidth=0,
+                       rowheight=28,
                        font=("Segoe UI", 9))
         style.configure("Treeview.Heading",
                        background="#f0f0f0",
@@ -108,16 +145,23 @@ class UninstallerApp:
         tree_frame = tk.Frame(list_card, bg=self.colors['card'])
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 15))
         
-        columns = ("Name", "Publisher", "Version")
-        self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=12)
+        columns = ("Select", "Name", "Publisher", "Version", "Size")
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=14)
         
+        self.tree.heading("Select", text="☐")
         self.tree.heading("Name", text="Application Name")
         self.tree.heading("Publisher", text="Publisher")
         self.tree.heading("Version", text="Version")
+        self.tree.heading("Size", text="Size")
         
-        self.tree.column("Name", width=400)
-        self.tree.column("Publisher", width=250)
-        self.tree.column("Version", width=120)
+        self.tree.column("Select", width=50, anchor="center")
+        self.tree.column("Name", width=350)
+        self.tree.column("Publisher", width=200)
+        self.tree.column("Version", width=100)
+        self.tree.column("Size", width=100, anchor="center")
+        
+        # Bind click event for checkbox
+        self.tree.bind("<Button-1>", self.on_tree_click)
         
         scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
@@ -133,7 +177,7 @@ class UninstallerApp:
         def create_button(parent, text, command, bg_color, icon=""):
             btn = tk.Button(parent, text=f"{icon} {text}".strip(), command=command,
                           bg=bg_color, fg="white", font=("Segoe UI", 10, "bold"),
-                          relief=tk.FLAT, cursor="hand2", padx=25, pady=10,
+                          relief=tk.FLAT, cursor="hand2", padx=20, pady=12,
                           activebackground=bg_color, activeforeground="white")
             btn.pack(side=tk.LEFT, padx=5)
             
@@ -150,8 +194,24 @@ class UninstallerApp:
                      self.colors['success'], "↻")
         create_button(btn_frame, "Uninstall Selected", self.uninstall_app, 
                      self.colors['danger'], "✕")
-        create_button(btn_frame, "Scan for Leftovers", self.scan_leftovers, 
+        create_button(btn_frame, "Batch Uninstall", self.batch_uninstall, 
+                     self.colors['warning'], "📦")
+        create_button(btn_frame, "Scan Leftovers", self.scan_leftovers, 
                      self.colors['primary'], "🔍")
+        create_button(btn_frame, "Force Remove", self.force_remove, 
+                     "#9C27B0", "⚡")
+        
+        # Quick actions on the right
+        quick_frame = tk.Frame(btn_frame, bg=self.colors['bg'])
+        quick_frame.pack(side=tk.RIGHT)
+        
+        tk.Button(quick_frame, text="Select All", command=self.select_all,
+                 bg="#607D8B", fg="white", font=("Segoe UI", 9),
+                 relief=tk.FLAT, cursor="hand2", padx=15, pady=8).pack(side=tk.LEFT, padx=2)
+        
+        tk.Button(quick_frame, text="Clear Selection", command=self.clear_selection,
+                 bg="#607D8B", fg="white", font=("Segoe UI", 9),
+                 relief=tk.FLAT, cursor="hand2", padx=15, pady=8).pack(side=tk.LEFT, padx=2)
         
         # Log card
         log_card = tk.Frame(content_frame, bg=self.colors['card'], 
@@ -161,18 +221,70 @@ class UninstallerApp:
         log_header = tk.Frame(log_card, bg=self.colors['card'])
         log_header.pack(fill=tk.X, padx=20, pady=(15, 10))
         
-        tk.Label(log_header, text="Activity Log", 
+        tk.Label(log_header, text="📝 Activity Log", 
                 font=("Segoe UI", 12, "bold"),
                 bg=self.colors['card'], fg=self.colors['text']).pack(side=tk.LEFT)
+        
+        # Clear log button
+        tk.Button(log_header, text="Clear Log", command=self.clear_log,
+                 bg="#607D8B", fg="white", font=("Segoe UI", 8),
+                 relief=tk.FLAT, cursor="hand2", padx=10, pady=4).pack(side=tk.RIGHT)
         
         log_content = tk.Frame(log_card, bg=self.colors['card'])
         log_content.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 15))
         
-        self.log_text = scrolledtext.ScrolledText(log_content, height=8, wrap=tk.WORD,
+        self.log_text = scrolledtext.ScrolledText(log_content, height=7, wrap=tk.WORD,
                                                   font=("Consolas", 9),
                                                   bg="#f9f9f9", fg=self.colors['text'],
                                                   relief=tk.FLAT, padx=10, pady=10)
         self.log_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Welcome message
+        self.log("Welcome to TraceWipe! 🎉")
+        self.log("Select apps and click 'Uninstall Selected' or use 'Batch Uninstall' for multiple apps.")
+    
+    def on_tree_click(self, event):
+        """Handle checkbox clicks in the tree"""
+        region = self.tree.identify("region", event.x, event.y)
+        if region == "cell":
+            column = self.tree.identify_column(event.x)
+            if column == "#1":  # Select column
+                item = self.tree.identify_row(event.y)
+                if item:
+                    current_value = self.tree.item(item)["values"][0]
+                    if current_value == "☐":
+                        self.tree.item(item, values=("☑",) + tuple(self.tree.item(item)["values"][1:]))
+                        self.selected_items.append(item)
+                    else:
+                        self.tree.item(item, values=("☐",) + tuple(self.tree.item(item)["values"][1:]))
+                        if item in self.selected_items:
+                            self.selected_items.remove(item)
+                    self.update_selected_count()
+    
+    def select_all(self):
+        """Select all apps in the list"""
+        self.selected_items = []
+        for item in self.tree.get_children():
+            self.tree.item(item, values=("☑",) + tuple(self.tree.item(item)["values"][1:]))
+            self.selected_items.append(item)
+        self.update_selected_count()
+        self.log("Selected all applications")
+    
+    def clear_selection(self):
+        """Clear all selections"""
+        for item in self.tree.get_children():
+            self.tree.item(item, values=("☐",) + tuple(self.tree.item(item)["values"][1:]))
+        self.selected_items = []
+        self.update_selected_count()
+        self.log("Cleared selection")
+    
+    def update_selected_count(self):
+        """Update the selected count in stats"""
+        self.selected_stat.config(text=str(len(self.selected_items)))
+    
+    def clear_log(self):
+        """Clear the activity log"""
+        self.log_text.delete(1.0, tk.END)
     
     def adjust_color(self, hex_color, amount):
         """Adjust color brightness for hover effects"""
@@ -181,27 +293,49 @@ class UninstallerApp:
         rgb = tuple(max(0, min(255, c + amount)) for c in rgb)
         return f'#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}'
     
+    def log(self, message):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
+        self.log_text.see(tk.END)
+        self.root.update()
+    
+    def sort_apps(self):
+        """Sort applications based on selected criteria"""
+        sort_by = self.sort_var.get()
+        if sort_by == "Name":
+            self.installed_apps.sort(key=lambda x: x["name"].lower())
+        elif sort_by == "Publisher":
+            self.installed_apps.sort(key=lambda x: x["publisher"].lower())
+        elif sort_by == "Size":
+            self.installed_apps.sort(key=lambda x: x.get("size", 0), reverse=True)
+        self.filter_apps()
+        self.log(f"Sorted by {sort_by}")
+    
     def filter_apps(self, *args):
         """Filter apps based on search query"""
         query = self.search_var.get().lower()
+        if query == "search applications...":
+            query = ""
+        
         self.tree.delete(*self.tree.get_children())
+        self.selected_items = []
         
         filtered_apps = [app for app in self.installed_apps 
                         if query in app["name"].lower() or 
                            query in app["publisher"].lower()]
         
         for app in filtered_apps:
-            self.tree.insert("", tk.END, values=(app["name"], app["publisher"], app["version"]))
-    
-    def log(self, message):
-        self.log_text.insert(tk.END, f"{message}\n")
-        self.log_text.see(tk.END)
-        self.root.update()
+            size_str = app.get("size_str", "Unknown")
+            self.tree.insert("", tk.END, values=("☐", app["name"], app["publisher"], 
+                                                 app["version"], size_str))
+        
+        self.update_selected_count()
     
     def load_installed_apps(self):
-        self.log("Loading installed applications...")
+        self.log("🔄 Loading installed applications...")
         self.tree.delete(*self.tree.get_children())
         self.installed_apps = []
+        self.selected_items = []
         
         def get_apps_from_registry(hive, key_path):
             apps = []
@@ -218,6 +352,7 @@ class UninstallerApp:
                             publisher = ""
                             version = ""
                             uninstall_string = ""
+                            size = 0
                             
                             try:
                                 publisher = winreg.QueryValueEx(subkey, "Publisher")[0]
@@ -234,12 +369,29 @@ class UninstallerApp:
                             except:
                                 pass
                             
+                            try:
+                                size = int(winreg.QueryValueEx(subkey, "EstimatedSize")[0])
+                            except:
+                                pass
+                            
                             if name and uninstall_string:
+                                # Convert size to readable format
+                                if size > 0:
+                                    size_mb = size / 1024
+                                    if size_mb > 1024:
+                                        size_str = f"{size_mb/1024:.1f} GB"
+                                    else:
+                                        size_str = f"{size_mb:.1f} MB"
+                                else:
+                                    size_str = "Unknown"
+                                
                                 apps.append({
                                     "name": name,
                                     "publisher": publisher,
                                     "version": version,
-                                    "uninstall_string": uninstall_string
+                                    "uninstall_string": uninstall_string,
+                                    "size": size,
+                                    "size_str": size_str
                                 })
                         except:
                             pass
@@ -275,9 +427,12 @@ class UninstallerApp:
         
         # Populate tree
         for app in self.installed_apps:
-            self.tree.insert("", tk.END, values=(app["name"], app["publisher"], app["version"]))
+            self.tree.insert("", tk.END, values=("☐", app["name"], app["publisher"], 
+                                                 app["version"], app["size_str"]))
         
-        self.log(f"Found {len(self.installed_apps)} installed applications.")
+        self.total_apps_stat.config(text=str(len(self.installed_apps)))
+        self.update_selected_count()
+        self.log(f"✓ Found {len(self.installed_apps)} installed applications")
     
     def uninstall_app(self):
         selection = self.tree.selection()
@@ -286,7 +441,11 @@ class UninstallerApp:
             return
         
         item = self.tree.item(selection[0])
-        app_name = item["values"][0]
+        values = item.get("values", [])
+        if not values or len(values) < 2:
+            messagebox.showerror("Error", "Invalid selection. Please try again.")
+            return
+        app_name = values[1]  # Index 1 because of checkbox column
         
         # Find the app in our list
         app = next((a for a in self.installed_apps if a["name"] == app_name), None)
@@ -294,46 +453,285 @@ class UninstallerApp:
             messagebox.showerror("Error", "Application not found.")
             return
         
-        confirm = messagebox.askyesno("Confirm Uninstall", 
-                                      f"Are you sure you want to uninstall:\n{app_name}?")
+        # Create custom dialog for uninstall options
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Uninstall Options")
+        dialog.geometry("500x300")
+        dialog.configure(bg=self.colors['card'])
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Header
+        header = tk.Frame(dialog, bg=self.colors['primary'], height=60)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
+        
+        tk.Label(header, text="🗑️ Uninstall Application", 
+                font=("Segoe UI", 14, "bold"),
+                bg=self.colors['primary'], fg="white").pack(expand=True)
+        
+        # Content
+        content = tk.Frame(dialog, bg=self.colors['card'])
+        content.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        tk.Label(content, text=f"Selected Application:", 
+                font=("Segoe UI", 10),
+                bg=self.colors['card'], fg=self.colors['text_light']).pack(anchor="w")
+        
+        tk.Label(content, text=app_name, 
+                font=("Segoe UI", 12, "bold"),
+                bg=self.colors['card'], fg=self.colors['text'],
+                wraplength=450).pack(anchor="w", pady=(5, 20))
+        
+        tk.Label(content, text="Choose uninstall method:", 
+                font=("Segoe UI", 10, "bold"),
+                bg=self.colors['card'], fg=self.colors['text']).pack(anchor="w", pady=(0, 10))
+        
+        # Button frame
+        btn_frame = tk.Frame(content, bg=self.colors['card'])
+        btn_frame.pack(fill=tk.X, pady=10)
+        
+        def native_uninstall():
+            dialog.destroy()
+            self.selected_app = app_name
+            self.log(f"🚀 Starting native uninstall: {app_name}")
+            
+            def uninstall_thread():
+                try:
+                    uninstall_cmd = app["uninstall_string"]
+                    
+                    # Run uninstaller
+                    if "msiexec" in uninstall_cmd.lower():
+                        subprocess.run(uninstall_cmd, shell=True)
+                    else:
+                        subprocess.run(uninstall_cmd, shell=True)
+                    
+                    self.log(f"✓ Uninstall command executed for {app_name}")
+                    self.log("Complete the uninstaller wizard, then click 'Scan Leftovers'")
+                    
+                    messagebox.showinfo("Uninstaller Launched", 
+                                      "The uninstaller has been started.\n\nAfter completing the uninstallation, click 'Scan Leftovers' to clean up remaining files.")
+                    
+                except Exception as e:
+                    self.log(f"✗ Error during uninstall: {str(e)}")
+                    messagebox.showerror("Error", f"Failed to uninstall: {str(e)}")
+            
+            thread = threading.Thread(target=uninstall_thread)
+            thread.start()
+        
+        def complete_removal():
+            dialog.destroy()
+            confirm = messagebox.askyesno("Complete Removal", 
+                                          f"⚠️ This will:\n\n" +
+                                          f"1. Run the native uninstaller\n" +
+                                          f"2. Automatically scan for leftovers\n" +
+                                          f"3. Remove all remaining files and folders\n\n" +
+                                          f"Continue with complete removal of {app_name}?",
+                                          icon='warning')
+            if not confirm:
+                return
+            
+            self.selected_app = app_name
+            self.log(f"⚡ Starting complete removal: {app_name}")
+            
+            def complete_thread():
+                try:
+                    # Step 1: Run native uninstaller
+                    self.log("Step 1/3: Running native uninstaller...")
+                    uninstall_cmd = app["uninstall_string"]
+                    
+                    if "msiexec" in uninstall_cmd.lower():
+                        # For MSI, add silent flags
+                        if "/I" in uninstall_cmd:
+                            uninstall_cmd = uninstall_cmd.replace("/I", "/X")
+                        if "/quiet" not in uninstall_cmd.lower():
+                            uninstall_cmd += " /quiet /norestart"
+                        subprocess.run(uninstall_cmd, shell=True, timeout=300)
+                    else:
+                        # Try to run with silent flags
+                        subprocess.run(f'{uninstall_cmd} /S /silent /quiet', shell=True, timeout=300)
+                    
+                    self.log("✓ Native uninstaller completed")
+                    
+                    # Step 2: Scan for leftovers
+                    self.log("Step 2/3: Scanning for leftovers...")
+                    leftovers = []
+                    search_name = app_name.lower()
+                    
+                    locations = [
+                        os.path.expandvars(r"%APPDATA%"),
+                        os.path.expandvars(r"%LOCALAPPDATA%"),
+                        os.path.expandvars(r"%PROGRAMDATA%"),
+                        os.path.expandvars(r"%PROGRAMFILES%"),
+                        os.path.expandvars(r"%PROGRAMFILES(X86)%")
+                    ]
+                    
+                    for location in locations:
+                        if not os.path.exists(location):
+                            continue
+                        try:
+                            for item in os.listdir(location):
+                                if search_name in item.lower():
+                                    full_path = os.path.join(location, item)
+                                    leftovers.append(full_path)
+                        except:
+                            pass
+                    
+                    self.log(f"✓ Found {len(leftovers)} leftover items")
+                    
+                    # Step 3: Clean leftovers
+                    if leftovers:
+                        self.log("Step 3/3: Cleaning leftovers...")
+                        cleaned = 0
+                        for item in leftovers:
+                            try:
+                                if os.path.isfile(item):
+                                    os.remove(item)
+                                    cleaned += 1
+                                elif os.path.isdir(item):
+                                    shutil.rmtree(item)
+                                    cleaned += 1
+                            except:
+                                pass
+                        self.log(f"✓ Removed {cleaned} leftover items")
+                    
+                    self.log(f"✓ Complete removal finished for {app_name}")
+                    self.root.after(0, lambda: messagebox.showinfo("Complete Removal Finished", 
+                                                                   f"{app_name} has been completely removed!\n\n" +
+                                                                   f"Cleaned {len(leftovers)} leftover items."))
+                    
+                    # Refresh the app list
+                    self.root.after(0, self.load_installed_apps)
+                    
+                except subprocess.TimeoutExpired:
+                    self.log("⚠️ Uninstaller timed out - it may require manual interaction")
+                    self.root.after(0, lambda: messagebox.showwarning("Timeout", 
+                                                                      "The uninstaller took too long.\n\nIt may require manual interaction. Please check for any open dialogs."))
+                except Exception as e:
+                    self.log(f"✗ Error during complete removal: {str(e)}")
+                    self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to complete removal: {str(e)}"))
+            
+            thread = threading.Thread(target=complete_thread)
+            thread.start()
+        
+        # Native uninstall button
+        native_btn = tk.Button(btn_frame, 
+                              text="🔧 Use Native Uninstaller\n(Recommended for most apps)",
+                              command=native_uninstall,
+                              bg=self.colors['primary'], fg="white",
+                              font=("Segoe UI", 10, "bold"),
+                              relief=tk.FLAT, cursor="hand2",
+                              padx=20, pady=15, justify=tk.LEFT)
+        native_btn.pack(fill=tk.X, pady=5)
+        
+        # Complete removal button
+        complete_btn = tk.Button(btn_frame,
+                                text="⚡ Complete Removal\n(Uninstall + Auto-clean leftovers)",
+                                command=complete_removal,
+                                bg=self.colors['success'], fg="white",
+                                font=("Segoe UI", 10, "bold"),
+                                relief=tk.FLAT, cursor="hand2",
+                                padx=20, pady=15, justify=tk.LEFT)
+        complete_btn.pack(fill=tk.X, pady=5)
+        
+        # Cancel button
+        cancel_btn = tk.Button(btn_frame,
+                              text="Cancel",
+                              command=dialog.destroy,
+                              bg="#757575", fg="white",
+                              font=("Segoe UI", 9),
+                              relief=tk.FLAT, cursor="hand2",
+                              padx=20, pady=10)
+        cancel_btn.pack(fill=tk.X, pady=(15, 0))
+    
+    def batch_uninstall(self):
+        """Uninstall multiple selected applications"""
+        if not self.selected_items:
+            messagebox.showwarning("No Selection", "Please select applications using the checkboxes.")
+            return
+        
+        app_names = []
+        apps_to_uninstall = []
+        
+        for item in self.selected_items:
+            values = self.tree.item(item).get("values", [])
+            if not values or len(values) < 2:
+                continue
+            app_name = values[1]
+            app_names.append(app_name)
+            app = next((a for a in self.installed_apps if a["name"] == app_name), None)
+            if app:
+                apps_to_uninstall.append(app)
+        
+        confirm = messagebox.askyesno("Batch Uninstall", 
+                                      f"Uninstall {len(apps_to_uninstall)} selected applications?\n\n" +
+                                      "\n".join(f"• {name}" for name in app_names[:5]) +
+                                      (f"\n... and {len(app_names) - 5} more" if len(app_names) > 5 else ""))
+        if not confirm:
+            return
+        
+        self.log(f"📦 Starting batch uninstall of {len(apps_to_uninstall)} applications")
+        
+        def batch_thread():
+            for i, app in enumerate(apps_to_uninstall, 1):
+                try:
+                    self.log(f"[{i}/{len(apps_to_uninstall)}] Uninstalling: {app['name']}")
+                    subprocess.run(app["uninstall_string"], shell=True)
+                    self.log(f"✓ Completed: {app['name']}")
+                except Exception as e:
+                    self.log(f"✗ Failed: {app['name']} - {str(e)}")
+            
+            self.log("✓ Batch uninstall completed!")
+            messagebox.showinfo("Batch Uninstall Complete", 
+                              f"Processed {len(apps_to_uninstall)} applications.\n\nClick 'Scan Leftovers' to clean up remaining files.")
+        
+        thread = threading.Thread(target=batch_thread)
+        thread.start()
+    
+    def force_remove(self):
+        """Force remove an application by deleting registry entries and files"""
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select an application to force remove.")
+            return
+        
+        item = self.tree.item(selection[0])
+        values = item.get("values", [])
+        if not values or len(values) < 2:
+            messagebox.showerror("Error", "Invalid selection. Please try again.")
+            return
+        app_name = values[1]
+        
+        confirm = messagebox.askyesno("Force Remove", 
+                                      f"⚠️ WARNING: Force remove will delete registry entries and files for:\n\n{app_name}\n\n" +
+                                      "This should only be used when normal uninstall fails.\n\nContinue?",
+                                      icon='warning')
         if not confirm:
             return
         
         self.selected_app = app_name
-        self.log(f"Uninstalling: {app_name}")
+        self.log(f"⚡ Force removing: {app_name}")
         
-        def uninstall_thread():
-            try:
-                uninstall_cmd = app["uninstall_string"]
-                
-                # Run uninstaller
-                if "msiexec" in uninstall_cmd.lower():
-                    subprocess.run(uninstall_cmd, shell=True)
-                else:
-                    subprocess.run(uninstall_cmd, shell=True)
-                
-                self.log(f"Uninstall command executed for {app_name}")
-                self.log("Please complete the uninstaller wizard if it appeared.")
-                
-                messagebox.showinfo("Uninstall Started", 
-                                  "Uninstaller has been launched. After completion, click 'Scan for Leftovers'.")
-                
-            except Exception as e:
-                self.log(f"Error during uninstall: {str(e)}")
-                messagebox.showerror("Error", f"Failed to uninstall: {str(e)}")
-        
-        thread = threading.Thread(target=uninstall_thread)
-        thread.start()
+        # Immediately scan and remove
+        self.scan_leftovers()
+        self.log(f"✓ Force remove completed for {app_name}")
     
     def scan_leftovers(self):
         if not self.selected_app:
-            app_name = tk.simpledialog.askstring("App Name", 
-                                                "Enter the name of the uninstalled application:")
+            app_name = simpledialog.askstring("Application Name", 
+                                             "Enter the name of the uninstalled application:",
+                                             parent=self.root)
             if not app_name:
                 return
             self.selected_app = app_name
         
-        self.log(f"Scanning for leftovers of: {self.selected_app}")
+        self.log(f"🔍 Scanning for leftovers: {self.selected_app}")
         
         def scan_thread():
             leftovers = []
@@ -361,23 +759,25 @@ class UninstallerApp:
                     pass
             
             if leftovers:
-                self.log(f"Found {len(leftovers)} potential leftover items:")
-                for item in leftovers:
-                    self.log(f"  - {item}")
+                self.log(f"Found {len(leftovers)} leftover items:")
+                for item in leftovers[:5]:  # Show first 5
+                    self.log(f"  → {item}")
+                if len(leftovers) > 5:
+                    self.log(f"  ... and {len(leftovers) - 5} more")
                 
-                confirm = messagebox.askyesno("Leftovers Found", 
-                                            f"Found {len(leftovers)} leftover items.\n\nDo you want to delete them?")
+                confirm = messagebox.askyesno("Leftovers Detected", 
+                                            f"Found {len(leftovers)} leftover items.\n\nWould you like to delete them?\n\n(Check the Activity Log for details)")
                 if confirm:
                     self.clean_leftovers(leftovers)
             else:
-                self.log("No leftovers found.")
-                messagebox.showinfo("Clean", "No leftover files or folders found!")
+                self.log("✓ No leftovers found - system is clean!")
+                messagebox.showinfo("All Clean", "No leftover files or folders were found.\n\nYour system is clean!")
         
         thread = threading.Thread(target=scan_thread)
         thread.start()
     
     def clean_leftovers(self, leftovers):
-        self.log("Cleaning up leftovers...")
+        self.log("🧹 Starting cleanup process...")
         cleaned = 0
         failed = 0
         
@@ -385,19 +785,19 @@ class UninstallerApp:
             try:
                 if os.path.isfile(item):
                     os.remove(item)
-                    self.log(f"Deleted file: {item}")
+                    self.log(f"✓ Deleted file: {os.path.basename(item)}")
                     cleaned += 1
                 elif os.path.isdir(item):
                     shutil.rmtree(item)
-                    self.log(f"Deleted folder: {item}")
+                    self.log(f"✓ Deleted folder: {os.path.basename(item)}")
                     cleaned += 1
             except Exception as e:
-                self.log(f"Failed to delete {item}: {str(e)}")
+                self.log(f"✗ Failed: {os.path.basename(item)}")
                 failed += 1
         
-        self.log(f"Cleanup complete. Deleted: {cleaned}, Failed: {failed}")
+        self.log(f"✓ Cleanup complete! Removed: {cleaned} | Failed: {failed}")
         messagebox.showinfo("Cleanup Complete", 
-                          f"Successfully deleted {cleaned} items.\n{failed} items could not be deleted.")
+                          f"Successfully removed {cleaned} items.\n\n{failed} items could not be deleted (may require admin rights).")
 
 if __name__ == "__main__":
     root = tk.Tk()

@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Building Advanced Uninstaller EXE
+echo Building TraceWipe EXE
 echo ========================================
 echo.
 
@@ -9,7 +9,7 @@ pip install pyinstaller
 
 echo.
 echo Building executable...
-pyinstaller --onefile --windowed --name "AdvancedUninstaller" --icon=NONE uninstaller.py
+pyinstaller --onefile --windowed --name "TraceWipe" --icon=NONE uninstaller.py
 
 echo.
 echo ========================================
@@ -17,6 +17,6 @@ echo Build Complete!
 echo ========================================
 echo.
 echo Your executable is located at:
-echo dist\AdvancedUninstaller.exe
+echo dist\TraceWipe.exe
 echo.
 pause
