@@ -12,7 +12,8 @@ class UninstallerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("TraceWipe - Complete Uninstaller")
-        self.root.geometry("1100x800")
+        self.root.geometry("1000x650")
+        self.root.minsize(800, 600)
         self.root.configure(bg="#f5f5f5")
         
         self.installed_apps = []
@@ -216,7 +217,7 @@ class UninstallerApp:
         # Log card
         log_card = tk.Frame(content_frame, bg=self.colors['card'], 
                            relief=tk.FLAT, bd=0)
-        log_card.pack(fill=tk.BOTH, expand=True)
+        log_card.pack(fill=tk.X, expand=False)
         
         log_header = tk.Frame(log_card, bg=self.colors['card'])
         log_header.pack(fill=tk.X, padx=20, pady=(15, 10))
@@ -244,17 +245,21 @@ class UninstallerApp:
         self.log("Select apps and click 'Uninstall Selected' or use 'Batch Uninstall' for multiple apps.")
     
     def on_tree_click(self, event):
-        """Handle checkbox clicks in the tree"""
+        """Handle clicks in the tree - select row and toggle checkbox"""
         region = self.tree.identify("region", event.x, event.y)
         if region == "cell":
-            column = self.tree.identify_column(event.x)
-            if column == "#1":  # Select column
-                item = self.tree.identify_row(event.y)
-                if item:
+            item = self.tree.identify_row(event.y)
+            if item:
+                # Always select the row when clicking anywhere on it
+                self.tree.selection_set(item)
+                
+                column = self.tree.identify_column(event.x)
+                if column == "#1":  # Select/checkbox column
                     current_value = self.tree.item(item)["values"][0]
                     if current_value == "☐":
                         self.tree.item(item, values=("☑",) + tuple(self.tree.item(item)["values"][1:]))
-                        self.selected_items.append(item)
+                        if item not in self.selected_items:
+                            self.selected_items.append(item)
                     else:
                         self.tree.item(item, values=("☐",) + tuple(self.tree.item(item)["values"][1:]))
                         if item in self.selected_items:
@@ -313,6 +318,8 @@ class UninstallerApp:
     
     def filter_apps(self, *args):
         """Filter apps based on search query"""
+        if not hasattr(self, 'tree'):
+            return
         query = self.search_var.get().lower()
         if query == "search applications...":
             query = ""
@@ -435,9 +442,13 @@ class UninstallerApp:
         self.log(f"✓ Found {len(self.installed_apps)} installed applications")
     
     def uninstall_app(self):
+        # Try tree selection first, then fall back to checkbox selection
         selection = self.tree.selection()
+        if not selection and self.selected_items:
+            selection = [self.selected_items[0]]  # Use first checked item
+        
         if not selection:
-            messagebox.showwarning("No Selection", "Please select an application to uninstall.")
+            messagebox.showwarning("No Selection", "Please click on an application to select it, then click Uninstall.")
             return
         
         item = self.tree.item(selection[0])
@@ -453,202 +464,222 @@ class UninstallerApp:
             messagebox.showerror("Error", "Application not found.")
             return
         
-        # Create custom dialog for uninstall options
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Uninstall Options")
-        dialog.geometry("500x300")
-        dialog.configure(bg=self.colors['card'])
-        dialog.transient(self.root)
-        dialog.grab_set()
+        # Confirm uninstall
+        confirm = messagebox.askyesno("Confirm Uninstall", 
+                                      f"Uninstall and remove all traces of:\n\n{app_name}\n\n" +
+                                      "This will:\n" +
+                                      "• Run the uninstaller silently\n" +
+                                      "• Scan for leftover files and folders\n" +
+                                      "• Remove all remaining traces\n\n" +
+                                      "Continue?",
+                                      icon='warning')
+        if not confirm:
+            return
         
-        # Center the dialog
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
-        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
-        dialog.geometry(f"+{x}+{y}")
+        self.selected_app = app_name
+        self.log(f"⚡ Starting complete uninstall: {app_name}")
+        self.log("=" * 60)
         
-        # Header
-        header = tk.Frame(dialog, bg=self.colors['primary'], height=60)
-        header.pack(fill=tk.X)
-        header.pack_propagate(False)
-        
-        tk.Label(header, text="🗑️ Uninstall Application", 
-                font=("Segoe UI", 14, "bold"),
-                bg=self.colors['primary'], fg="white").pack(expand=True)
-        
-        # Content
-        content = tk.Frame(dialog, bg=self.colors['card'])
-        content.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-        
-        tk.Label(content, text=f"Selected Application:", 
-                font=("Segoe UI", 10),
-                bg=self.colors['card'], fg=self.colors['text_light']).pack(anchor="w")
-        
-        tk.Label(content, text=app_name, 
-                font=("Segoe UI", 12, "bold"),
-                bg=self.colors['card'], fg=self.colors['text'],
-                wraplength=450).pack(anchor="w", pady=(5, 20))
-        
-        tk.Label(content, text="Choose uninstall method:", 
-                font=("Segoe UI", 10, "bold"),
-                bg=self.colors['card'], fg=self.colors['text']).pack(anchor="w", pady=(0, 10))
-        
-        # Button frame
-        btn_frame = tk.Frame(content, bg=self.colors['card'])
-        btn_frame.pack(fill=tk.X, pady=10)
-        
-        def native_uninstall():
-            dialog.destroy()
-            self.selected_app = app_name
-            self.log(f"🚀 Starting native uninstall: {app_name}")
-            
-            def uninstall_thread():
-                try:
-                    uninstall_cmd = app["uninstall_string"]
+        def complete_uninstall_thread():
+            try:
+                # Step 1: Run native uninstaller
+                self.log("STEP 1: Running uninstaller...")
+                uninstall_cmd = app["uninstall_string"]
+                self.log(f"Command: {uninstall_cmd}")
+                
+                if "msiexec" in uninstall_cmd.lower():
+                    # For MSI, add silent flags
+                    if "/I" in uninstall_cmd:
+                        uninstall_cmd = uninstall_cmd.replace("/I", "/X")
+                    if "/quiet" not in uninstall_cmd.lower():
+                        uninstall_cmd += " /quiet /norestart"
+                    self.log(f"Modified MSI command: {uninstall_cmd}")
+                    subprocess.run(uninstall_cmd, shell=True, timeout=300)
+                else:
+                    # Try to run with silent flags (common silent switches)
+                    silent_flags = ["/S", "/silent", "/quiet", "/q", "-silent", "--silent"]
+                    cmd_executed = False
                     
-                    # Run uninstaller
-                    if "msiexec" in uninstall_cmd.lower():
-                        subprocess.run(uninstall_cmd, shell=True)
-                    else:
-                        subprocess.run(uninstall_cmd, shell=True)
-                    
-                    self.log(f"✓ Uninstall command executed for {app_name}")
-                    self.log("Complete the uninstaller wizard, then click 'Scan Leftovers'")
-                    
-                    messagebox.showinfo("Uninstaller Launched", 
-                                      "The uninstaller has been started.\n\nAfter completing the uninstallation, click 'Scan Leftovers' to clean up remaining files.")
-                    
-                except Exception as e:
-                    self.log(f"✗ Error during uninstall: {str(e)}")
-                    messagebox.showerror("Error", f"Failed to uninstall: {str(e)}")
-            
-            thread = threading.Thread(target=uninstall_thread)
-            thread.start()
-        
-        def complete_removal():
-            dialog.destroy()
-            confirm = messagebox.askyesno("Complete Removal", 
-                                          f"⚠️ This will:\n\n" +
-                                          f"1. Run the native uninstaller\n" +
-                                          f"2. Automatically scan for leftovers\n" +
-                                          f"3. Remove all remaining files and folders\n\n" +
-                                          f"Continue with complete removal of {app_name}?",
-                                          icon='warning')
-            if not confirm:
-                return
-            
-            self.selected_app = app_name
-            self.log(f"⚡ Starting complete removal: {app_name}")
-            
-            def complete_thread():
-                try:
-                    # Step 1: Run native uninstaller
-                    self.log("Step 1/3: Running native uninstaller...")
-                    uninstall_cmd = app["uninstall_string"]
-                    
-                    if "msiexec" in uninstall_cmd.lower():
-                        # For MSI, add silent flags
-                        if "/I" in uninstall_cmd:
-                            uninstall_cmd = uninstall_cmd.replace("/I", "/X")
-                        if "/quiet" not in uninstall_cmd.lower():
-                            uninstall_cmd += " /quiet /norestart"
-                        subprocess.run(uninstall_cmd, shell=True, timeout=300)
-                    else:
-                        # Try to run with silent flags
-                        subprocess.run(f'{uninstall_cmd} /S /silent /quiet', shell=True, timeout=300)
-                    
-                    self.log("✓ Native uninstaller completed")
-                    
-                    # Step 2: Scan for leftovers
-                    self.log("Step 2/3: Scanning for leftovers...")
-                    leftovers = []
-                    search_name = app_name.lower()
-                    
-                    locations = [
-                        os.path.expandvars(r"%APPDATA%"),
-                        os.path.expandvars(r"%LOCALAPPDATA%"),
-                        os.path.expandvars(r"%PROGRAMDATA%"),
-                        os.path.expandvars(r"%PROGRAMFILES%"),
-                        os.path.expandvars(r"%PROGRAMFILES(X86)%")
-                    ]
-                    
-                    for location in locations:
-                        if not os.path.exists(location):
-                            continue
+                    for flag in silent_flags:
                         try:
-                            for item in os.listdir(location):
-                                if search_name in item.lower():
-                                    full_path = os.path.join(location, item)
-                                    leftovers.append(full_path)
+                            self.log(f"Trying with flag: {flag}")
+                            subprocess.run(f'{uninstall_cmd} {flag}', shell=True, timeout=300, check=True)
+                            cmd_executed = True
+                            self.log(f"✓ Success with flag: {flag}")
+                            break
                         except:
-                            pass
+                            continue
                     
-                    self.log(f"✓ Found {len(leftovers)} leftover items")
+                    if not cmd_executed:
+                        # Run without silent flag as fallback
+                        self.log("Running without silent flags...")
+                        subprocess.run(uninstall_cmd, shell=True, timeout=300)
+                
+                self.log("✓ Uninstaller completed")
+                
+                # Wait a moment for files to be released
+                import time
+                self.log("Waiting 3 seconds for file system to update...")
+                time.sleep(3)
+                
+                # Step 2: Scan for leftovers
+                self.log("\nSTEP 2: Scanning for leftover files...")
+                self.log("=" * 60)
+                leftovers = []
+                search_terms = [app_name.lower()]
+                
+                # Extract additional search terms from app name
+                words = app_name.lower().split()
+                for word in words:
+                    if len(word) > 3 and word not in ['the', 'and', 'for', 'with']:
+                        search_terms.append(word)
+                
+                self.log(f"Search terms: {', '.join(search_terms)}")
+                
+                locations = [
+                    os.path.expandvars(r"%APPDATA%"),
+                    os.path.expandvars(r"%LOCALAPPDATA%"),
+                    os.path.expandvars(r"%PROGRAMDATA%"),
+                    os.path.expandvars(r"%PROGRAMFILES%"),
+                    os.path.expandvars(r"%PROGRAMFILES(X86)%"),
+                    os.path.expandvars(r"%USERPROFILE%\AppData\Roaming"),
+                    os.path.expandvars(r"%USERPROFILE%\AppData\Local"),
+                ]
+                
+                self.log(f"\nScanning {len(locations)} locations...")
+                for location in locations:
+                    if not os.path.exists(location):
+                        continue
+                    self.log(f"Scanning: {location}")
+                    try:
+                        items_found = 0
+                        for item in os.listdir(location):
+                            item_lower = item.lower()
+                            for term in search_terms:
+                                if term in item_lower:
+                                    full_path = os.path.join(location, item)
+                                    if full_path not in leftovers:
+                                        leftovers.append(full_path)
+                                        items_found += 1
+                                        self.log(f"  Found: {item}")
+                                    break
+                        if items_found == 0:
+                            self.log(f"  No matches found")
+                    except Exception as e:
+                        self.log(f"  Error scanning: {str(e)}")
+                
+                self.log(f"\n✓ Scan complete! Found {len(leftovers)} leftover items")
+                
+                # Step 3: Clean leftovers
+                if leftovers:
+                    self.log("\nSTEP 3: Removing leftover files...")
+                    self.log("=" * 60)
+                    cleaned = 0
+                    failed = 0
                     
-                    # Step 3: Clean leftovers
-                    if leftovers:
-                        self.log("Step 3/3: Cleaning leftovers...")
-                        cleaned = 0
-                        for item in leftovers:
-                            try:
-                                if os.path.isfile(item):
-                                    os.remove(item)
-                                    cleaned += 1
-                                elif os.path.isdir(item):
-                                    shutil.rmtree(item)
-                                    cleaned += 1
-                            except:
-                                pass
-                        self.log(f"✓ Removed {cleaned} leftover items")
+                    for item in leftovers:
+                        try:
+                            item_name = os.path.basename(item)
+                            if os.path.isfile(item):
+                                os.remove(item)
+                                self.log(f"✓ Deleted file: {item}")
+                                cleaned += 1
+                            elif os.path.isdir(item):
+                                shutil.rmtree(item)
+                                self.log(f"✓ Deleted folder: {item}")
+                                cleaned += 1
+                        except Exception as e:
+                            self.log(f"✗ Failed to delete: {item}")
+                            self.log(f"  Error: {str(e)}")
+                            failed += 1
                     
-                    self.log(f"✓ Complete removal finished for {app_name}")
-                    self.root.after(0, lambda: messagebox.showinfo("Complete Removal Finished", 
-                                                                   f"{app_name} has been completely removed!\n\n" +
-                                                                   f"Cleaned {len(leftovers)} leftover items."))
-                    
-                    # Refresh the app list
-                    self.root.after(0, self.load_installed_apps)
-                    
-                except subprocess.TimeoutExpired:
-                    self.log("⚠️ Uninstaller timed out - it may require manual interaction")
-                    self.root.after(0, lambda: messagebox.showwarning("Timeout", 
-                                                                      "The uninstaller took too long.\n\nIt may require manual interaction. Please check for any open dialogs."))
-                except Exception as e:
-                    self.log(f"✗ Error during complete removal: {str(e)}")
-                    self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to complete removal: {str(e)}"))
+                    self.log(f"\n{'=' * 60}")
+                    self.log(f"✓ Cleanup complete!")
+                    self.log(f"  Successfully removed: {cleaned} items")
+                    self.log(f"  Failed to remove: {failed} items")
+                else:
+                    self.log("\n✓ No leftover files found - system is clean!")
+                
+                self.log(f"\n{'=' * 60}")
+                self.log(f"✓ {app_name} has been completely removed!")
+                self.log(f"{'=' * 60}\n")
+                
+                # Show completion message
+                self.root.after(0, lambda: messagebox.showinfo("Uninstall Complete", 
+                                                               f"{app_name} has been completely removed!\n\n" +
+                                                               f"• Uninstaller executed\n" +
+                                                               f"• {len(leftovers)} leftover items found\n" +
+                                                               f"• {cleaned if leftovers else 0} items cleaned\n\n" +
+                                                               "Check Activity Log for details."))
+                
+                # Refresh the app list
+                self.root.after(0, self.load_installed_apps)
+                
+            except subprocess.TimeoutExpired:
+                self.log("⚠️ Uninstaller timed out - scanning for leftovers anyway...")
+                # Continue with leftover scan even if uninstaller times out
+                self.scan_and_clean_leftovers(app_name)
+            except Exception as e:
+                self.log(f"✗ Error during uninstall: {str(e)}")
+                import traceback
+                self.log(traceback.format_exc())
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to uninstall: {str(e)}\n\nTry using 'Force Remove' instead."))
+        
+        thread = threading.Thread(target=complete_uninstall_thread)
+        thread.start()
+    
+    def scan_and_clean_leftovers(self, app_name):
+        """Helper method to scan and clean leftovers"""
+        try:
+            self.log("Scanning for leftover files...")
+            leftovers = []
+            search_terms = [app_name.lower()]
             
-            thread = threading.Thread(target=complete_thread)
-            thread.start()
-        
-        # Native uninstall button
-        native_btn = tk.Button(btn_frame, 
-                              text="🔧 Use Native Uninstaller\n(Recommended for most apps)",
-                              command=native_uninstall,
-                              bg=self.colors['primary'], fg="white",
-                              font=("Segoe UI", 10, "bold"),
-                              relief=tk.FLAT, cursor="hand2",
-                              padx=20, pady=15, justify=tk.LEFT)
-        native_btn.pack(fill=tk.X, pady=5)
-        
-        # Complete removal button
-        complete_btn = tk.Button(btn_frame,
-                                text="⚡ Complete Removal\n(Uninstall + Auto-clean leftovers)",
-                                command=complete_removal,
-                                bg=self.colors['success'], fg="white",
-                                font=("Segoe UI", 10, "bold"),
-                                relief=tk.FLAT, cursor="hand2",
-                                padx=20, pady=15, justify=tk.LEFT)
-        complete_btn.pack(fill=tk.X, pady=5)
-        
-        # Cancel button
-        cancel_btn = tk.Button(btn_frame,
-                              text="Cancel",
-                              command=dialog.destroy,
-                              bg="#757575", fg="white",
-                              font=("Segoe UI", 9),
-                              relief=tk.FLAT, cursor="hand2",
-                              padx=20, pady=10)
-        cancel_btn.pack(fill=tk.X, pady=(15, 0))
+            words = app_name.lower().split()
+            for word in words:
+                if len(word) > 3:
+                    search_terms.append(word)
+            
+            locations = [
+                os.path.expandvars(r"%APPDATA%"),
+                os.path.expandvars(r"%LOCALAPPDATA%"),
+                os.path.expandvars(r"%PROGRAMDATA%"),
+                os.path.expandvars(r"%PROGRAMFILES%"),
+                os.path.expandvars(r"%PROGRAMFILES(X86)%"),
+            ]
+            
+            for location in locations:
+                if not os.path.exists(location):
+                    continue
+                try:
+                    for item in os.listdir(location):
+                        item_lower = item.lower()
+                        for term in search_terms:
+                            if term in item_lower:
+                                full_path = os.path.join(location, item)
+                                if full_path not in leftovers:
+                                    leftovers.append(full_path)
+                                break
+                except:
+                    pass
+            
+            if leftovers:
+                cleaned = 0
+                for item in leftovers:
+                    try:
+                        if os.path.isfile(item):
+                            os.remove(item)
+                            cleaned += 1
+                        elif os.path.isdir(item):
+                            shutil.rmtree(item)
+                            cleaned += 1
+                    except:
+                        pass
+                self.log(f"✓ Cleaned {cleaned} leftover items")
+            
+            self.root.after(0, self.load_installed_apps)
+        except Exception as e:
+            self.log(f"✗ Error cleaning leftovers: {str(e)}")
     
     def batch_uninstall(self):
         """Uninstall multiple selected applications"""
@@ -669,36 +700,128 @@ class UninstallerApp:
             if app:
                 apps_to_uninstall.append(app)
         
+        if not apps_to_uninstall:
+            messagebox.showwarning("No Valid Selection", "No valid applications selected.")
+            return
+        
         confirm = messagebox.askyesno("Batch Uninstall", 
-                                      f"Uninstall {len(apps_to_uninstall)} selected applications?\n\n" +
+                                      f"Uninstall and remove all traces of {len(apps_to_uninstall)} applications?\n\n" +
                                       "\n".join(f"• {name}" for name in app_names[:5]) +
-                                      (f"\n... and {len(app_names) - 5} more" if len(app_names) > 5 else ""))
+                                      (f"\n... and {len(app_names) - 5} more" if len(app_names) > 5 else "") +
+                                      "\n\nEach app will be uninstalled and cleaned automatically.",
+                                      icon='warning')
         if not confirm:
             return
         
         self.log(f"📦 Starting batch uninstall of {len(apps_to_uninstall)} applications")
         
         def batch_thread():
+            import time
             for i, app in enumerate(apps_to_uninstall, 1):
                 try:
-                    self.log(f"[{i}/{len(apps_to_uninstall)}] Uninstalling: {app['name']}")
-                    subprocess.run(app["uninstall_string"], shell=True)
-                    self.log(f"✓ Completed: {app['name']}")
+                    app_name = app['name']
+                    self.log(f"\n[{i}/{len(apps_to_uninstall)}] Processing: {app_name}")
+                    
+                    # Run uninstaller
+                    self.log("  → Running uninstaller...")
+                    uninstall_cmd = app["uninstall_string"]
+                    
+                    if "msiexec" in uninstall_cmd.lower():
+                        if "/I" in uninstall_cmd:
+                            uninstall_cmd = uninstall_cmd.replace("/I", "/X")
+                        if "/quiet" not in uninstall_cmd.lower():
+                            uninstall_cmd += " /quiet /norestart"
+                        subprocess.run(uninstall_cmd, shell=True, timeout=300)
+                    else:
+                        silent_flags = ["/S", "/silent", "/quiet", "/q"]
+                        cmd_executed = False
+                        for flag in silent_flags:
+                            try:
+                                subprocess.run(f'{uninstall_cmd} {flag}', shell=True, timeout=300, check=True)
+                                cmd_executed = True
+                                break
+                            except:
+                                continue
+                        if not cmd_executed:
+                            subprocess.run(uninstall_cmd, shell=True, timeout=300)
+                    
+                    self.log("  ✓ Uninstaller completed")
+                    time.sleep(2)
+                    
+                    # Scan and clean leftovers
+                    self.log("  → Scanning for leftovers...")
+                    leftovers = []
+                    search_terms = [app_name.lower()]
+                    words = app_name.lower().split()
+                    for word in words:
+                        if len(word) > 3:
+                            search_terms.append(word)
+                    
+                    locations = [
+                        os.path.expandvars(r"%APPDATA%"),
+                        os.path.expandvars(r"%LOCALAPPDATA%"),
+                        os.path.expandvars(r"%PROGRAMDATA%"),
+                        os.path.expandvars(r"%PROGRAMFILES%"),
+                        os.path.expandvars(r"%PROGRAMFILES(X86)%"),
+                    ]
+                    
+                    for location in locations:
+                        if not os.path.exists(location):
+                            continue
+                        try:
+                            for item in os.listdir(location):
+                                item_lower = item.lower()
+                                for term in search_terms:
+                                    if term in item_lower:
+                                        full_path = os.path.join(location, item)
+                                        if full_path not in leftovers:
+                                            leftovers.append(full_path)
+                                        break
+                        except:
+                            pass
+                    
+                    # Clean leftovers
+                    if leftovers:
+                        cleaned = 0
+                        for item in leftovers:
+                            try:
+                                if os.path.isfile(item):
+                                    os.remove(item)
+                                    cleaned += 1
+                                elif os.path.isdir(item):
+                                    shutil.rmtree(item)
+                                    cleaned += 1
+                            except:
+                                pass
+                        self.log(f"  ✓ Cleaned {cleaned} leftover items")
+                    else:
+                        self.log("  ✓ No leftovers found")
+                    
+                    self.log(f"  ✓ Completed: {app_name}")
+                    
+                except subprocess.TimeoutExpired:
+                    self.log(f"  ⚠️ Timeout: {app['name']}")
                 except Exception as e:
-                    self.log(f"✗ Failed: {app['name']} - {str(e)}")
+                    self.log(f"  ✗ Failed: {app['name']} - {str(e)}")
             
-            self.log("✓ Batch uninstall completed!")
-            messagebox.showinfo("Batch Uninstall Complete", 
-                              f"Processed {len(apps_to_uninstall)} applications.\n\nClick 'Scan Leftovers' to clean up remaining files.")
+            self.log(f"\n✓ Batch uninstall completed! Processed {len(apps_to_uninstall)} applications")
+            self.root.after(0, lambda: messagebox.showinfo("Batch Uninstall Complete", 
+                                                           f"Successfully processed {len(apps_to_uninstall)} applications!\n\n" +
+                                                           "Check the Activity Log for details."))
+            self.root.after(0, self.load_installed_apps)
         
         thread = threading.Thread(target=batch_thread)
         thread.start()
     
     def force_remove(self):
         """Force remove an application by deleting registry entries and files"""
+        # Try tree selection first, then fall back to checkbox selection
         selection = self.tree.selection()
+        if not selection and self.selected_items:
+            selection = [self.selected_items[0]]  # Use first checked item
+        
         if not selection:
-            messagebox.showwarning("No Selection", "Please select an application to force remove.")
+            messagebox.showwarning("No Selection", "Please click on an application to select it, then click Force Remove.")
             return
         
         item = self.tree.item(selection[0])
