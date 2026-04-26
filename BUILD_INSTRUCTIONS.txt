@@ -1,0 +1,56 @@
+========================================
+HOW TO CREATE THE .EXE FILE
+========================================
+
+METHOD 1: AUTOMATIC (EASIEST)
+------------------------------
+1. Double-click "build_exe.bat"
+2. Wait for the process to complete
+3. Your .exe file will be in the "dist" folder
+4. File name: AdvancedUninstaller.exe
+
+
+METHOD 2: MANUAL
+------------------------------
+1. Open Command Prompt or PowerShell
+2. Navigate to this folder
+3. Run these commands:
+
+   pip install pyinstaller
+   pyinstaller --onefile --windowed --name "AdvancedUninstaller" uninstaller.py
+
+4. Your .exe will be in the "dist" folder
+
+
+WHAT THE BUILD OPTIONS MEAN:
+------------------------------
+--onefile       : Creates a single .exe file (not a folder)
+--windowed      : No console window appears (GUI only)
+--name          : Names your executable "AdvancedUninstaller.exe"
+
+
+AFTER BUILDING:
+------------------------------
+1. Go to the "dist" folder
+2. Find "AdvancedUninstaller.exe"
+3. You can copy this file anywhere
+4. Right-click and "Run as Administrator" to use it
+
+
+TROUBLESHOOTING:
+------------------------------
+- If PyInstaller is not found: Make sure Python is in your PATH
+- If build fails: Try running Command Prompt as Administrator
+- If .exe doesn't work: Make sure you run it as Administrator
+
+
+FILE SIZE:
+------------------------------
+The .exe will be around 8-12 MB because it includes Python runtime
+
+
+DISTRIBUTION:
+------------------------------
+You can share the .exe file with others!
+They don't need Python installed to use it.
+Just remind them to run as Administrator.
