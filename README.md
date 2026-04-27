@@ -1,6 +1,19 @@
-# TraceWipe - Complete Application Uninstaller
+<div align="center">
+  <h1>🚀 TraceWipe</h1>
+  <h3>Complete Application Removal Engine</h3>
+  
+  <p>
+    <a href="https://github.com/Maniredii/TraceWipe/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/version-1.0.0-blue?style=for-the-badge&logo=github" alt="Version"></a>
+    <img src="https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows" alt="Windows">
+    <img src="https://img.shields.io/badge/Python-3.6+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+    <img src="https://img.shields.io/badge/License-MIT-success?style=for-the-badge" alt="License">
+  </p>
 
-A modern, feature-rich Windows application that completely removes programs and cleans up all leftover files and traces. Built to compete with industry leaders like IObit Uninstaller, Revo Uninstaller, and Geek Uninstaller.
+  <img src="promo_main.png" alt="TraceWipe Dashboard" width="800"/>
+
+  <p><b>A modern, feature-rich Windows application that completely removes programs and cleans up all leftover files and traces. Built to compete with industry leaders like IObit Uninstaller, Revo Uninstaller, and Geek Uninstaller.</b></p>
+</div>
+
 
 ## Screenshots / Walkthrough
 

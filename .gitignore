@@ -1,8 +1,6 @@
 # Images and Promotional Materials
 
-promo_main.png
-promo_about.png
-*.png
+
 
 # Python Cache
 __pycache__/
