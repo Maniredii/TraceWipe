@@ -38,6 +38,7 @@ class UninstallerApp:
         
         self.create_widgets()
         self.load_installed_apps()
+        self.check_disclaimer()
         
     def _create_gradient(self, canvas, width, height, color1, color2):
         """Draw a horizontal gradient on a canvas."""
@@ -87,6 +88,7 @@ class UninstallerApp:
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0, bg='white', fg=self.colors['text'], font=('Segoe UI', 10))
         help_menu.add_command(label="ℹ️  About TraceWipe", command=self.show_about_dialog)
+        help_menu.add_command(label="📜  Privacy Policy & Disclaimer", command=self.show_privacy_policy)
         menubar.add_cascade(label="Help", menu=help_menu)
         
         self.root.config(menu=menubar)
@@ -295,6 +297,66 @@ class UninstallerApp:
         else:
             messagebox.showinfo("Not Found", f"Install location is not available for '{app_name}'.")
     
+    def check_disclaimer(self):
+        """Check if user has accepted the disclaimer, if not show it."""
+        config_dir = os.path.join(os.environ.get('APPDATA', ''), 'TraceWipe')
+        config_file = os.path.join(config_dir, 'accepted.txt')
+        
+        if not os.path.exists(config_file):
+            self.root.after(500, self.show_privacy_policy)
+            
+    def accept_disclaimer(self, window):
+        config_dir = os.path.join(os.environ.get('APPDATA', ''), 'TraceWipe')
+        try:
+            if not os.path.exists(config_dir):
+                os.makedirs(config_dir)
+            with open(os.path.join(config_dir, 'accepted.txt'), 'w') as f:
+                f.write('accepted=true')
+        except:
+            pass
+        window.destroy()
+
+    def show_privacy_policy(self):
+        """Show Privacy Policy and Disclaimer dialog"""
+        policy_win = tk.Toplevel(self.root)
+        policy_win.title("Privacy Policy & Disclaimer")
+        policy_win.geometry("650x600")
+        policy_win.resizable(False, False)
+        policy_win.configure(bg=self.colors['card'])
+        policy_win.transient(self.root)
+        policy_win.grab_set()
+        
+        # Center on parent
+        policy_win.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - 650) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 600) // 2
+        policy_win.geometry(f"+{x}+{y}")
+        
+        header_frame = tk.Frame(policy_win, bg=self.colors['primary'], height=60)
+        header_frame.pack(fill=tk.X)
+        tk.Label(header_frame, text="Privacy Policy & Disclaimer", font=("Segoe UI", 16, "bold"),
+                 bg=self.colors['primary'], fg="white").pack(pady=15)
+                 
+        content_frame = tk.Frame(policy_win, bg=self.colors['card'], padx=30, pady=20)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        text_area = scrolledtext.ScrolledText(content_frame, wrap=tk.WORD, width=60, height=20,
+                                              font=("Segoe UI", 10), bg="#f8fafc", fg=self.colors['text'],
+                                              relief=tk.FLAT, padx=15, pady=15)
+        text_area.pack(fill=tk.BOTH, expand=True)
+        
+        policy_text = """TraceWipe - Complete Application Removal Engine\n\nDISCLAIMER - USE AT YOUR OWN RISK\n\nTraceWipe is a powerful system utility designed to remove applications and their residual files and registry entries from your system. Because this software interacts directly with the Windows Registry and file system, any mistakes or interruptions during the uninstallation process could potentially lead to system instability, application malfunctions, or other unintended consequences.\n\nThe developer(s) of TraceWipe provide this software "as is" and assume no responsibility for any system errors, data loss, or other problems that may arise from its use.\n\nBY USING TRACEWIPE, YOU ACKNOWLEDGE AND AGREE THAT YOU ARE USING IT ENTIRELY AT YOUR OWN RISK.\n\nAvailable Features:\n• Complete Uninstall: Runs the native uninstaller and cleans leftover traces.\n• Force Remove: Directly deletes an application's files and registry entries without running the native uninstaller. Useful for stubborn or broken applications.\n• Deep Scan for Leftovers: Scans for and removes leftover files, folders, and registry entries associated with uninstalled programs.\n• Batch Uninstall: Select multiple applications and uninstall them sequentially.\n• Safe Registry Cleaning: Targets specific application traces while protecting critical system registry keys.\n\nPrivacy Policy:\nTraceWipe respects your privacy. This application operates entirely locally on your machine. We do not collect, store, transmit, or share any personal data, application usage statistics, or system information. All application logs and activity are stored locally and cleared when the application is closed."""
+        
+        text_area.insert(tk.END, policy_text)
+        text_area.config(state=tk.DISABLED)
+        
+        btn_frame = tk.Frame(policy_win, bg=self.colors['card'])
+        btn_frame.pack(fill=tk.X, pady=(0, 20), padx=30)
+        close_btn = tk.Button(btn_frame, text="I Understand & Agree", command=lambda: self.accept_disclaimer(policy_win),
+                              bg=self.colors['accent'], fg="white", font=("Segoe UI", 10, "bold"),
+                              relief=tk.FLAT, padx=30, pady=8, cursor="hand2")
+        close_btn.pack()
+
     def show_about_dialog(self):
         """Show About dialog with developer info and clickable links"""
         about_win = tk.Toplevel(self.root)
