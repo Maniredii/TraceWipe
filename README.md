@@ -2,6 +2,23 @@
 
 A modern, feature-rich Windows application that completely removes programs and cleans up all leftover files and traces. Built to compete with industry leaders like IObit Uninstaller, Revo Uninstaller, and Geek Uninstaller.
 
+## Screenshots / Walkthrough
+
+### Step 1
+![Step 1](images/STEP%201.png)
+
+### Step 2
+![Step 2](images/STEP%202.png)
+
+### Step 3
+![Step 3](images/STEP%203.png)
+
+### Step 4
+![Step 4](images/STEP%204.png)
+
+### Step 5
+![Step 5](images/STEP%205.png)
+
 ## ✨ Key Features
 
 ### 🎯 Core Functionality
